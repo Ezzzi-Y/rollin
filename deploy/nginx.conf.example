@@ -31,7 +31,7 @@
 #   4. /o/{token} 的 Token 是密码学随机串，本文件为候选人域名的 /o/ 单独配置了不含 URI 的
 #      日志格式，避免原始 Token 落进 nginx 访问日志（对应验收项 A22）。
 #
-# 依赖：nginx >= 1.25.1（使用了 `http2 on;` 新语法）。旧版本请改用 `listen 443 ssl http2;`。
+# HTTPS 使用兼容旧版本的 `listen 443 ssl http2;` 写法，避免依赖 nginx 1.25.1 的新指令。
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -57,8 +57,7 @@ server {
 }
 
 server {
-    listen 443 ssl;
-    http2 on;
+    listen 443 ssl http2;
     server_name __CANDIDATE_HOST__;
 
     # 证书路径（certbot）：替换为实际路径
@@ -157,8 +156,7 @@ server {
 }
 
 server {
-    listen 443 ssl;
-    http2 on;
+    listen 443 ssl http2;
     server_name __ADMIN_HOST__;
 
     ssl_certificate     /etc/letsencrypt/live/__ADMIN_HOST__/fullchain.pem;
