@@ -4,3 +4,8 @@ node_modules/
 dist/
 .idea/
 .vscode/
+
+# 本地部署凭证（模板见 deploy/backend.env.production.example）
+deploy/backend.env
+# Python 运行产物
+__pycache__/
