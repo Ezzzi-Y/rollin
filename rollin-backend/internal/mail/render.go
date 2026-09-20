@@ -94,9 +94,14 @@ func renderTemplate(tpl string, allowed []string, vars map[string]string, warn f
 	})
 }
 
-// expiresAtText formats the deadline shown inside mail bodies: UTC, human readable.
+// mailZone is the display timezone for times shown inside mail bodies. It is pinned
+// to UTC+8 (北京时间) as a FixedZone so the rendered text does not depend on the
+// container/host TZ setting.
+var mailZone = time.FixedZone("UTC+8", 8*3600)
+
+// expiresAtText formats the deadline shown inside mail bodies: UTC+8, human readable.
 func expiresAtText(t time.Time) string {
-	return t.UTC().Format("2006-01-02 15:04:05 UTC")
+	return t.In(mailZone).Format("2006-01-02 15:04:05 UTC+8")
 }
 
 // roleDisplay maps the OWNER/ADMIN enum to the Chinese noun used in invitation mail.

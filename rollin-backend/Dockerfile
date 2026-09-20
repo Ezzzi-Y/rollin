@@ -1,7 +1,7 @@
 # =============================================================================
 # Rollin 后端镜像（多阶段）
 #   阶段一：golang:1.25 编译静态二进制（CGO 关闭，go.mod 声明 go 1.25）
-#   阶段二：alpine 最小运行时，非 root 用户，UTC 时区，/healthz 健康检查
+#   阶段二：alpine 最小运行时，非 root 用户，Asia/Shanghai 时区，/healthz 健康检查
 #
 # 同一二进制两种入口（见 cmd/server/main.go）：
 #   /app/rollin-server                    运行 HTTP 服务（默认）
@@ -24,15 +24,16 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/rollin-
 FROM alpine:3.21
 
 # ca-certificates：出站 SMTP（STARTTLS/TLS）与 HTTPS 依赖根证书
-# tzdata + /etc/localtime：容器时区固定 UTC；应用内部（DSN Loc=UTC）本就全程 UTC，
-#                         日志时间戳与数据库时间保持一致
+# tzdata + /etc/localtime：容器时区固定 Asia/Shanghai（UTC+8），docker logs 里的
+#                         slog 时间戳按北京时间输出；数据库存储仍是 UTC（DSN Loc=UTC），
+#                         仅展示层（日志、邮件正文）转 UTC+8
 RUN apk add --no-cache ca-certificates tzdata \
-    && cp /usr/share/zoneinfo/UTC /etc/localtime \
-    && echo "UTC" > /etc/timezone \
+    && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+    && echo "Asia/Shanghai" > /etc/timezone \
     && addgroup -S rollin \
     && adduser -S -G rollin rollin
 
-ENV TZ=UTC
+ENV TZ=Asia/Shanghai
 WORKDIR /app
 COPY --from=builder /out/rollin-server /app/rollin-server
 

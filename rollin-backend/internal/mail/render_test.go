@@ -28,7 +28,7 @@ func TestRenderTemplateWhitelistEscapingAndUnknownVars(t *testing.T) {
 	if lines[5] != "" {
 		t.Fatalf("undeclared variables must render empty (04 §5.13), got %q", lines[5])
 	}
-	if !strings.Contains(lines[3], "2026-09-22 12:00:00 UTC") {
+	if !strings.Contains(lines[3], "2026-09-22 20:00:00 UTC+8") {
 		t.Fatalf("expiresAt format unexpected: %q", lines[3])
 	}
 }
