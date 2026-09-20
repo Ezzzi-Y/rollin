@@ -266,12 +266,17 @@ func (s *fakeSMTPServer) handle(conn net.Conn) {
 				}
 			}
 			data = builder.String()
-			write("250 OK queued")
-		case strings.HasPrefix(verb, "QUIT"):
-			write("221 bye")
+			// Record BEFORE the 250 reply: the client proceeds the moment it reads
+			// "250 OK queued", so appending here (not at QUIT) guarantees the message
+			// is visible to Messages() as soon as the send returns. Recording at QUIT
+			// raced with the test's read — the client sees 221 bye before the server
+			// goroutine appends, and CI reported "task SENT, got 0" under load.
 			s.mu.Lock()
 			s.mail = append(s.mail, fakeSMTPMessage{From: from, To: to, Data: data})
 			s.mu.Unlock()
+			write("250 OK queued")
+		case strings.HasPrefix(verb, "QUIT"):
+			write("221 bye")
 			return
 		default:
 			write("250 OK")
