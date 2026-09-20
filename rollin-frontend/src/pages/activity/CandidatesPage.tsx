@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, ArrowUpDown, Pencil, Search } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, BookOpen, Pencil, Search } from 'lucide-react'
+import { Link } from 'react-router'
 import { toast } from 'sonner'
 
 import { apiErrorMessage } from '@/api/errorMessages'
@@ -254,7 +255,17 @@ function CandidatesContent() {
       <PageHeader
         title="候选人"
         description="名单、分数、排名与 Offer 进度；支持筛选、排序、分页与导出（需求 §71）"
-        actions={<ExportButton slug={ws.slug} disabled={ws.disabled} />}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link to={'/a/' + encodeURIComponent(ws.slug) + '/import-tokens#api-guide'}>
+                <BookOpen className="size-3.5" aria-hidden />
+                接口调用说明
+              </Link>
+            </Button>
+            <ExportButton slug={ws.slug} disabled={ws.disabled} />
+          </div>
+        }
       />
 
       {/* 筛选区 */}

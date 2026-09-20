@@ -51,6 +51,7 @@ CREATE TABLE candidate (
 CREATE TABLE application (
   id INTEGER PRIMARY KEY AUTOINCREMENT, activity_id INTEGER NOT NULL,
   candidate_id INTEGER NOT NULL, name TEXT NOT NULL, email TEXT NOT NULL,
+  qq TEXT NOT NULL DEFAULT '', class_name TEXT NOT NULL DEFAULT '',
   score INTEGER NOT NULL, rank INTEGER, import_order INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'WAITING', created_at DATETIME, updated_at DATETIME
 );

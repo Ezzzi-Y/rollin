@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ban, Check, Copy, KeyRound, Plus, TriangleAlert } from 'lucide-react'
+import { Ban, BookOpen, Check, Copy, KeyRound, Plus, TriangleAlert } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { apiErrorMessage } from '@/api/errorMessages'
@@ -243,7 +243,7 @@ function CreatedTokenCard({
             <CopyButton text={curl} label="复制 curl" />
           </div>
           <p className="text-xs text-muted-foreground">
-            字段：studentId（1–64 位字母数字_-）、name、email（将小写规范化）、score（1–2147483647）；
+            字段：studentId（1–64 位字母数字_-）、name、email（将小写规范化）、qq、className、score（1–2147483647）；
             重复导入同一学号为幂等更新。排名冻结后导入将被拒绝。
           </p>
         </div>
@@ -253,6 +253,118 @@ function CreatedTokenCard({
             我已保存，关闭提示
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ImportApiGuide() {
+  const requestExample = [
+    'curl -X POST https://admin.example.edu.cn/api/import/candidates \\',
+    '  -H "Authorization: Bearer <IMPORT_TOKEN>" \\',
+    '  -H "Content-Type: application/json" \\',
+    '  -d \'{"studentId":"2026010388","name":"张三","email":"zhangsan@example.edu.cn","qq":"123456789","className":"计算机科学与技术 1 班","score":92}\'',
+  ].join('\n')
+  const responseExample = [
+    '{',
+    '  "created": true,',
+    '  "applicationId": 101,',
+    '  "candidateId": 55,',
+    '  "activityId": 2,',
+    '  "status": "WAITING",',
+    '  "rankingDirty": true',
+    '}',
+  ].join('\n')
+
+  return (
+    <Card id="api-guide" className="scroll-mt-6">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <BookOpen className="size-4" aria-hidden />
+          外部候选人导入接口说明
+        </CardTitle>
+        <CardDescription>
+          外部报名系统使用 Import Token 调用接口，每次提交一个候选人。请将 Token 放在请求头中，不要放到 URL 或请求体。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6 text-sm">
+        <section className="space-y-2">
+          <h3 className="font-medium">1. 请求地址与认证</h3>
+          <div className="grid gap-2 rounded-lg border bg-muted/30 p-3 sm:grid-cols-[120px_1fr]">
+            <span className="text-muted-foreground">请求方法</span>
+            <code className="font-mono text-xs">POST</code>
+            <span className="text-muted-foreground">请求地址</span>
+            <code className="break-all font-mono text-xs">/api/import/candidates</code>
+            <span className="text-muted-foreground">认证请求头</span>
+            <code className="break-all font-mono text-xs">Authorization: Bearer &lt;IMPORT_TOKEN&gt;</code>
+            <span className="text-muted-foreground">内容类型</span>
+            <code className="font-mono text-xs">Content-Type: application/json</code>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            请求应发送到管理域名。Token 创建成功后只展示一次；系统只保存 Token 哈希，遗失后需要吊销旧 Token 并创建新的 Token。
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="font-medium">2. curl 调用示例</h3>
+          <div className="flex items-start gap-2 rounded-lg bg-zinc-950 p-3 text-zinc-100">
+            <pre className="min-w-0 flex-1 overflow-x-auto whitespace-pre font-mono text-xs">{requestExample}</pre>
+            <CopyButton text={requestExample} label="复制示例" />
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="font-medium">3. 请求字段</h3>
+          <div className="divide-y rounded-lg border">
+            {[
+              ['studentId', '必填', '字符串，1–64 位字母、数字、下划线或短横线；保留前导零。'],
+              ['name', '必填', '候选人姓名，最长 100 个字符。'],
+              ['email', '必填', '候选人邮箱；服务端会去除首尾空格并统一转为小写。'],
+              ['qq', '可选', 'QQ 号码或账号字符串，最长 32 个字符。'],
+              ['className', '可选', '班级名称，最长 100 个字符；也兼容使用 class。'],
+              ['score', '必填', '正整数，范围为 1–2147483647；用于排名重算。'],
+            ].map(([field, required, description]) => (
+              <div key={field} className="grid gap-1 px-3 py-2 sm:grid-cols-[110px_60px_1fr] sm:items-baseline">
+                <code className="font-mono text-xs">{field}</code>
+                <span className={required === '必填' ? 'text-foreground' : 'text-muted-foreground'}>{required}</span>
+                <span className="text-muted-foreground">{description}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            请求体必须是单个 JSON 对象，不能提交数组，也不能携带 activityId、rank 等未定义字段。
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="font-medium">4. 成功响应与重试</h3>
+          <div className="grid gap-2 rounded-lg border bg-muted/30 p-3 sm:grid-cols-2">
+            <div>
+              <p className="font-medium">首次导入：201 Created</p>
+              <p className="mt-1 text-xs text-muted-foreground">创建候选人记录，状态为 WAITING。</p>
+            </div>
+            <div>
+              <p className="font-medium">重复导入：200 OK</p>
+              <p className="mt-1 text-xs text-muted-foreground">按 studentId + 活动幂等更新，返回相同的 applicationId。</p>
+            </div>
+          </div>
+          <pre className="overflow-x-auto rounded-lg border bg-muted/30 p-3 font-mono text-xs">{responseExample}</pre>
+          <p className="text-xs text-muted-foreground">
+            网络超时可以安全重试；相同 studentId 不会重复创建记录。修改姓名、邮箱、QQ、班级或分数会更新原记录并标记排名待重算。
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="font-medium">5. 常见错误</h3>
+          <div className="grid gap-2 rounded-lg border p-3 text-xs sm:grid-cols-2">
+            <p><code className="font-mono">TOKEN_INVALID</code>：Token 缺失、错误或已吊销。</p>
+            <p><code className="font-mono">TOKEN_EXPIRED</code>：Token 已过期。</p>
+            <p><code className="font-mono">VALIDATION_ERROR</code>：JSON、字段或分数不符合要求。</p>
+            <p><code className="font-mono">RANKING_FROZEN</code>：活动排名已冻结，禁止导入。</p>
+            <p><code className="font-mono">ACTIVITY_DISABLED</code>：活动已停用。</p>
+            <p><code className="font-mono">RATE_LIMITED</code>：请求过于频繁，请稍后重试。</p>
+          </div>
+        </section>
       </CardContent>
     </Card>
   )
@@ -322,6 +434,8 @@ function ImportTokensContent() {
           </p>
         </div>
       ) : null}
+
+      <ImportApiGuide />
 
       {created ? <CreatedTokenCard result={created} onDismiss={() => setCreated(null)} /> : null}
 

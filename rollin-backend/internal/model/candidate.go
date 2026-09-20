@@ -18,15 +18,18 @@ type Candidate struct {
 
 func (Candidate) TableName() string { return "candidate" }
 
-// Application is the activity-local candidate record (05 §6, 88.3.4): name/email/score
-// belong here, not on Candidate. rank is NULL until a recalculation assigns 1..N and is
-// temporarily NULLed in groups during tie-order swaps (05 §8 three-step swap).
+// Application is the activity-local candidate record (05 §6, 88.3.4): name/email/qq/
+// className/score belong here, not on Candidate. rank is NULL until a recalculation
+// assigns 1..N and is temporarily NULLed in groups during tie-order swaps (05 §8
+// three-step swap).
 type Application struct {
 	ID          uint64 `gorm:"primaryKey"`
 	ActivityID  uint64 `gorm:"column:activity_id;not null;uniqueIndex:uk_application_activity_candidate,priority:1;uniqueIndex:uk_application_rank,priority:1;index:idx_application_status_rank,priority:1;index:idx_application_import,priority:1"`
 	CandidateID uint64 `gorm:"column:candidate_id;not null;uniqueIndex:uk_application_activity_candidate,priority:2"`
 	Name        string `gorm:"type:varchar(100);not null"`
 	Email       string `gorm:"type:varchar(254);not null"`
+	QQ          string `gorm:"column:qq;type:varchar(32);not null;default:''"`
+	ClassName   string `gorm:"column:class_name;type:varchar(100);not null;default:''"`
 	Score       int    `gorm:"not null"`
 	Rank        *int   `gorm:"column:rank;uniqueIndex:uk_application_rank,priority:2;index:idx_application_status_rank,priority:3"`
 	ImportOrder uint64 `gorm:"column:import_order;not null;index:idx_application_import,priority:2"`

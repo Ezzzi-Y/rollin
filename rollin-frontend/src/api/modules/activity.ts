@@ -104,6 +104,8 @@ export interface CandidateListItem {
   studentId: string
   name: string
   email: string
+  qq: string
+  className: string
   score: number
   rank: number | null
   importOrder: number
@@ -159,6 +161,8 @@ export interface CandidateDetail {
   studentId: string
   name: string
   email: string
+  qq: string
+  className: string
   score: number
   rank: number | null
   importOrder: number

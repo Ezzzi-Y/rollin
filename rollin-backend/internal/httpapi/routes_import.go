@@ -38,11 +38,15 @@ const (
 )
 
 // importCandidateRequest is the §8.1 single-object payload. Arrays and unknown fields
-// (activityId / rank / anything else) are rejected before the service is called.
+// (activityId / rank / anything else) are rejected before the service is called. class is
+// accepted as a compatibility alias for className; className is the canonical field.
 type importCandidateRequest struct {
 	StudentID string `json:"studentId"`
 	Name      string `json:"name"`
 	Email     string `json:"email"`
+	QQ        string `json:"qq"`
+	ClassName string `json:"className"`
+	Class     string `json:"class"`
 	Score     *int64 `json:"score"`
 }
 
@@ -76,6 +80,11 @@ func (s *Server) importCandidate(w http.ResponseWriter, r *http.Request) {
 		StudentID: body.StudentID,
 		Name:      body.Name,
 		Email:     body.Email,
+		QQ:        body.QQ,
+		ClassName: body.ClassName,
+	}
+	if input.ClassName == "" {
+		input.ClassName = body.Class
 	}
 	if body.Score != nil {
 		input.Score = int(*body.Score) // 64-bit int: validated 1..2147483647 in the service

@@ -76,6 +76,8 @@ CREATE TABLE application (
   candidate_id INTEGER NOT NULL,
   name TEXT NOT NULL,
   email TEXT NOT NULL,
+  qq TEXT NOT NULL DEFAULT '',
+  class_name TEXT NOT NULL DEFAULT '',
   score INTEGER NOT NULL,
   rank INTEGER,
   import_order INTEGER NOT NULL DEFAULT 0,

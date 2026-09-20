@@ -94,6 +94,8 @@ func renderCandidateItem(item application.Item) map[string]any {
 		"studentId":     item.StudentID,
 		"name":          item.Name,
 		"email":         item.Email,
+		"qq":            item.QQ,
+		"className":     item.ClassName,
 		"score":         item.Score,
 		"rank":          item.Rank,
 		"importOrder":   item.ImportOrder,

@@ -5,7 +5,7 @@
 // Isolation invariants enforced here (88.3, 84 章约束 2/19/20):
 //   - Candidate is the platform identity keyed by the immutable student_id; the import
 //     path only reuses it, never overwrites accepted_offer_id or any other activity's
-//     profile. name/email/score/rank/status live on Application per activity.
+//     profile. name/email/qq/class_name/score/rank/status live on Application per activity.
 //   - UNIQUE(activity_id, candidate_id) backs the idempotent upsert.
 //   - Every write path locks the activity row (SELECT ... FOR UPDATE) first, which both
 //     serializes import_order allocation and re-reads ranking_frozen without a race.
@@ -66,6 +66,8 @@ type ImportInput struct {
 	StudentID string
 	Name      string
 	Email     string
+	QQ        string
+	ClassName string
 	Score     int
 }
 
@@ -86,6 +88,8 @@ type Item struct {
 	StudentID     string
 	Name          string
 	Email         string
+	QQ            string
+	ClassName     string
 	Score         int
 	Rank          *int
 	ImportOrder   uint64
@@ -180,6 +184,8 @@ func (s *service) ImportOne(ctx context.Context, rawToken string, in ImportInput
 	// 去首尾空格；student_id 保留原样含前导零).
 	in.Name = strings.TrimSpace(in.Name)
 	in.Email = validate.NormalizeEmail(in.Email)
+	in.QQ = strings.TrimSpace(in.QQ)
+	in.ClassName = strings.TrimSpace(in.ClassName)
 
 	var result ImportResult
 	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -225,6 +231,12 @@ func (s *service) ImportOne(ctx context.Context, rawToken string, in ImportInput
 			if existing.Email != in.Email {
 				changes["email"] = in.Email
 			}
+			if existing.QQ != in.QQ {
+				changes["qq"] = in.QQ
+			}
+			if existing.ClassName != in.ClassName {
+				changes["class_name"] = in.ClassName
+			}
 			if existing.Score != in.Score {
 				changes["score"] = in.Score
 			}
@@ -260,6 +272,8 @@ func (s *service) ImportOne(ctx context.Context, rawToken string, in ImportInput
 			CandidateID: cand.ID,
 			Name:        in.Name,
 			Email:       in.Email,
+			QQ:          in.QQ,
+			ClassName:   in.ClassName,
 			Score:       in.Score,
 			ImportOrder: order,
 			Status:      model.ApplicationWaiting,
@@ -287,7 +301,8 @@ func (s *service) ImportOne(ctx context.Context, rawToken string, in ImportInput
 }
 
 // validateImportInput enforces the §8.1 field rules: studentId shape (leading zeros kept
-// as-is), name required ≤100, normalized email shape, score 1..2147483647 (88.3.7).
+// as-is), name required ≤100, normalized email shape, optional qq ≤32 and className ≤100,
+// score 1..2147483647 (88.3.7).
 func validateImportInput(in ImportInput) error {
 	if err := validate.ValidateStudentID(in.StudentID); err != nil {
 		return errs.Validation(err.Error())
@@ -297,6 +312,12 @@ func validateImportInput(in ImportInput) error {
 	}
 	if err := validate.ValidateEmail(in.Email); err != nil {
 		return errs.Validation(err.Error())
+	}
+	if len([]rune(in.QQ)) > 32 {
+		return errs.Validation("QQ 不超过 32 字")
+	}
+	if len([]rune(in.ClassName)) > 100 {
+		return errs.Validation("班级不超过 100 字")
 	}
 	if err := validate.ValidateScore(in.Score); err != nil {
 		return errs.Validation(err.Error())
@@ -374,6 +395,8 @@ func (s *service) List(ctx context.Context, activityID uint64, query ListQuery) 
 			StudentID:     rows[i].StudentID,
 			Name:          rows[i].Name,
 			Email:         rows[i].Email,
+			QQ:            rows[i].QQ,
+			ClassName:     rows[i].ClassName,
 			Score:         rows[i].Score,
 			Rank:          rows[i].Rank,
 			ImportOrder:   rows[i].ImportOrder,
@@ -430,6 +453,8 @@ func (s *service) Get(ctx context.Context, activityID, applicationID uint64) (*D
 			StudentID:     row.StudentID,
 			Name:          row.Name,
 			Email:         row.Email,
+			QQ:            row.QQ,
+			ClassName:     row.ClassName,
 			Score:         row.Score,
 			Rank:          row.Rank,
 			ImportOrder:   row.ImportOrder,
@@ -582,6 +607,8 @@ func (s *service) loadDetail(ctx context.Context, tx *gorm.DB, activityID, appli
 			StudentID:     row.StudentID,
 			Name:          row.Name,
 			Email:         row.Email,
+			QQ:            row.QQ,
+			ClassName:     row.ClassName,
 			Score:         row.Score,
 			Rank:          row.Rank,
 			ImportOrder:   row.ImportOrder,
