@@ -1,0 +1,59 @@
+name: Notify Feishu
+description: >-
+  把部署事件（开始 / 成功 / 失败）渲染成飞书互动卡片，推送到群机器人。
+  提交号、提交说明、分支、触发者、耗时均由本 action 自动从 GitHub 事件上下文
+  与工作区 git 提取，调用方只需提供 webhook 与阶段。
+
+  通知失败不会让流水线变红（降级为 ::warning::），避免"部署成功但通知挂了"
+  被误判成部署失败。
+
+inputs:
+  webhook_url:
+    description: >-
+      飞书群机器人 webhook 地址（https://open.feishu.cn/open-apis/bot/v2/hook/...）。
+      来自仓库 Secrets，未配置时本 action 跳过并告警。
+    required: true
+  secret:
+    description: 机器人「签名校验」密钥；未开启签名校验则留空
+    required: false
+    default: ''
+  status:
+    description: 事件阶段，取值 started / success / failure
+    required: true
+  service:
+    description: 服务名，出现在卡片标题里，例如「后端」「前端」
+    required: true
+  build_result:
+    description: build job 的结果（needs.<job>.result），仅失败卡片用于定位阶段
+    required: false
+    default: ''
+  deploy_result:
+    description: deploy job 的结果，仅失败卡片用于定位阶段
+    required: false
+    default: ''
+  started_at:
+    description: 部署开始时间（Unix 秒）。仅结束通知需要，用于计算耗时
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: 推送飞书卡片
+      shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.webhook_url }}
+        WEBHOOK_SECRET: ${{ inputs.secret }}
+        STATUS: ${{ inputs.status }}
+        SERVICE: ${{ inputs.service }}
+        BUILD_RESULT: ${{ inputs.build_result }}
+        DEPLOY_RESULT: ${{ inputs.deploy_result }}
+        STARTED_AT: ${{ inputs.started_at }}
+        REPOSITORY: ${{ github.repository }}
+        REF_NAME: ${{ github.ref_name }}
+        ACTOR: ${{ github.actor }}
+        EVENT_NAME: ${{ github.event_name }}
+        SHA: ${{ github.sha }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        COMMITS_JSON: ${{ toJSON(github.event.commits) }}
+      run: python3 "$GITHUB_ACTION_PATH/send.py"

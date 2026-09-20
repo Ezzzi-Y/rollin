@@ -12,6 +12,8 @@
 #
 # 需要的 Secrets：FRONTEND_SSH_HOST / FRONTEND_SSH_USER / FRONTEND_SSH_KEY、
 # ADMIN_BASE_URL、CANDIDATE_BASE_URL。
+# 可选 Secrets：FEISHU_WEBHOOK（飞书群机器人地址）、FEISHU_WEBHOOK_SECRET（签名密钥）；
+# 不配则跳过部署通知。
 # Repository Variables：BACKEND_UPSTREAM（例如 10.0.0.12:12820）。
 # SSH_USER 按当前部署方案配置为 root；前端不使用 Docker。
 # =============================================================================
@@ -26,6 +28,7 @@ on:
       - 'deploy/scripts/frontend-deploy.sh'
       - '.github/workflows/deploy-frontend.yml'
       - '.github/actions/prepare-ssh/**'
+      - '.github/actions/notify-feishu/**'
   workflow_dispatch:
 
 permissions:
@@ -90,8 +93,23 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment: production
+    outputs:
+      # 传给 notify job 计算部署耗时；deploy 被跳过时为空，通知里自动省略
+      started_at: ${{ steps.timing.outputs.epoch }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: 记录部署开始时间
+        id: timing
+        run: echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: 通知部署开始
+        uses: ./.github/actions/notify-feishu
+        with:
+          webhook_url: ${{ secrets.FEISHU_WEBHOOK }}
+          secret: ${{ secrets.FEISHU_WEBHOOK_SECRET }}
+          status: started
+          service: 前端
 
       - uses: actions/download-artifact@v4
         with:
@@ -192,3 +210,24 @@ jobs:
           check "候选人域名不暴露导入接口" "${CANDIDATE_BASE_URL}/api/import/candidates" 404
 
           [ "$failed" = "0" ] || exit 1
+
+  notify:
+    name: 通知部署结果
+    # always() 保证构建失败、部署中断时同样发出失败通知；部署成功时发成功通知。
+    needs: [build, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      # 仅用于手动触发时从 git 取提交信息（push 事件直接用事件里的 commits）
+      - uses: actions/checkout@v4
+
+      - name: 推送飞书通知
+        uses: ./.github/actions/notify-feishu
+        with:
+          webhook_url: ${{ secrets.FEISHU_WEBHOOK }}
+          secret: ${{ secrets.FEISHU_WEBHOOK_SECRET }}
+          status: ${{ (needs.build.result == 'success' && needs.deploy.result == 'success') && 'success' || 'failure' }}
+          service: 前端
+          build_result: ${{ needs.build.result }}
+          deploy_result: ${{ needs.deploy.result }}
+          started_at: ${{ needs.deploy.outputs.started_at }}

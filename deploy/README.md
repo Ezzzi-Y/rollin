@@ -13,6 +13,7 @@
 | MySQL / Redis | 外部服务，不由流水线或本仓任何脚本启动 |
 | 数据库迁移 | 后端流水线内自动执行（换容器之前），迁移前自动 `mysqldump` 备份 |
 | 失败处理 | 后端健康门禁不过自动回滚到上一个镜像；前端 `nginx -t` 不过自动回滚符号链接 |
+| 部署通知 | 部署开始/结束各推一条飞书群卡片，含提交号、提交说明、触发者、用时、失败阶段（见 §5.5） |
 
 本目录其余文件：
 
@@ -24,6 +25,7 @@
 | `../.github/workflows/deploy-backend.yml` | 后端流水线 |
 | `../.github/workflows/deploy-frontend.yml` | 前端流水线 |
 | `../.github/actions/prepare-ssh/action.yml` | 两条流水线共用的 SSH 准备步骤 |
+| `../.github/actions/notify-feishu/` | 两条流水线共用的部署通知（飞书卡片渲染 + 签名 + 发送，见 §5.5） |
 | `../docker-compose.dev.yml` | **仅本地开发/验收**，自带 MySQL/Redis 容器；生产不使用 |
 | `../docker-compose.legacy.yml` | 已废弃的旧部署方式，留档用，勿在生产使用 |
 
@@ -183,6 +185,8 @@ ssh-keyscan -p 22 -H <server> 2>/dev/null
 | `SSH_PORT` | SSH 端口，默认 22（可省略） |
 | `SSH_KNOWN_HOSTS` | 服务器主机公钥，见 §2.6（建议配置；省略则流水线用 `ssh-keyscan` 现场获取） |
 | `GHCR_TOKEN` | 可选。ghcr.io 读取令牌（classic PAT，勾 `read:packages`）。**不配**时自动回退用本次运行的 `GITHUB_TOKEN`，适用于镜像包与仓库关联的情况 |
+| `FEISHU_WEBHOOK` | 可选。飞书群机器人 webhook 地址。**不配则完全跳过部署通知**（见 §5.5） |
+| `FEISHU_WEBHOOK_SECRET` | 可选。飞书机器人开启「签名校验」时填对应密钥；未开启则留空 |
 
 ### 3.2 Variables（可选，仅用于冒烟检查与个性化）
 
@@ -303,6 +307,38 @@ docker run -d --name rollin-backend --restart unless-stopped \
 
 > **数据库迁移不支持自动降级。** 代码回滚不会回退 schema，只能靠 §7 的备份恢复。
 > 涉及破坏性迁移时，务必先确认备份文件可用再做发布。
+
+### 5.5 部署通知（飞书）
+
+两条流水线都会在部署开始与部署结束时各推一张飞书互动卡片到研发群，前后端通知互相独立：
+
+| 卡片 | 颜色 | 触发条件 |
+| --- | --- | --- |
+| 🚀 开始部署 | 蓝色 | deploy job 启动（构建通过、环境审批通过之后） |
+| ✅ 部署成功 | 绿色 | `build` 与 `deploy` 两个 job 都成功（含冒烟检查） |
+| ❌ 部署失败 | 红色 | 构建失败、部署中断、回滚、冒烟检查不过，卡片会标注失败阶段 |
+
+卡片内容：提交号（7 位）、分支、触发者（手动触发会标注）、提交说明、用时，以及一个跳转
+Actions 运行详情的按钮。**提交号与提交说明的取法**：push 触发时读本次推送的提交列表
+（一次推多个提交会把清单一起列出，避免只看得到最后一个）；手动 `Run workflow` 时读工作区
+git 的 HEAD。
+
+配置步骤（Settings → Secrets and variables → Actions）：
+
+1. 在目标飞书群里「群设置 → 群机器人 → 添加机器人 → 自定义机器人」，复制 webhook 地址；
+2. 存为仓库 Secret `FEISHU_WEBHOOK`；
+3. 机器人若开启了「签名校验」，把密钥存为 `FEISHU_WEBHOOK_SECRET`；未开启就留空，此时
+   action 不会附签名参数。
+
+行为约定：
+
+- **`FEISHU_WEBHOOK` 没配时，通知步骤直接跳过并输出一条 warning**，流水线不受影响。
+  想彻底关闭通知，把该 Secret 删掉即可。
+- **通知失败不会把流水线判为失败**（地址失效、签名错误、网络不通都降级为 warning）。
+  发送是否成功，看 Actions 日志里的 `飞书通知已发送` 或 `::warning::`。
+- webhook 地址本身就是凭证（拿到就能往群里发消息），**只能放 Secrets，绝不写进 workflow 文件**；
+  万一泄露，到飞书机器人设置里重置地址后更新 Secret。
+- 卡片里的提交说明直接来自 commit message，提交信息里不要带凭证。
 
 ## 6. 验收清单
 
