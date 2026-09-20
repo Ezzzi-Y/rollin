@@ -1,0 +1,231 @@
+# =============================================================================
+# Rollin V1 宿主机 nginx 配置（TLS 终结 + 双域名白名单隔离 + 前端静态交付）
+# =============================================================================
+# 这是前端部署流水线使用的 Nginx 模板。流水线会把
+# __CANDIDATE_HOST__ / __ADMIN_HOST__ 替换成 GitHub Secrets 中的两个域名，
+# 再安装到 /etc/nginx/conf.d/rollin.conf。
+#
+# 拓扑：
+#
+#   浏览器 ── 宿主机 nginx（本文件）
+#              ├── admin.xxx.xxx  →  / 与 /assets/* 等  → /var/www/rollin/current（磁盘静态）
+#              │                     /api/*             → rollin_backend 127.0.0.1:8080
+#              └── t.xxx.xxx      →  /o/:token         → /var/www/rollin/current（SPA fallback）
+#                                    /api/public/*     → rollin_backend 127.0.0.1:8080
+#                                    其余 /api/*       → 404（白名单隔离）
+#                                    其余路径          → 404
+#
+#   rollin_backend  后端服务器上的容器，通过后端私网地址提供 12820（仅允许前端服务器访问）
+#   前端            不使用 Docker，由 GitHub Actions 构建后部署到 /var/www/rollin/current
+#                   （指向 /opt/rollin/releases/<sha> 的符号链接，实现原子切换）
+#   MySQL / Redis   外部服务，与本文件无关
+#
+# 安全边界（重要）：
+#   1. 域名隔离完全由本文件实现。后端 chi 只监听单端口，直连 127.0.0.1:8080 即可访问全部
+#      /api/*——因此 12820 只允许前端服务器访问，防火墙/安全组不得对公网放行。
+#   2. proxy_set_header Host $host 是承重配置：后端 CSRF 校验（04 §1.4）要求
+#      Origin/Referer host ∈ {请求 Host} ∪ CSRF_ALLOWED_ORIGINS，改写 Host 会让所有带
+#      Cookie 的写请求返回 403。
+#   3. /healthz 仅限本机访问：这里显式 404，避免被当作 SPA 路由 fallback 到 index.html
+#      而误暴露存活信息。
+#   4. /o/{token} 的 Token 是密码学随机串，本文件为候选人域名的 /o/ 单独配置了不含 URI 的
+#      日志格式，避免原始 Token 落进 nginx 访问日志（对应验收项 A22）。
+#
+# 依赖：nginx >= 1.25.1（使用了 `http2 on;` 新语法）。旧版本请改用 `listen 443 ssl http2;`。
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 上游：后端容器发布在宿主机回环地址
+# -----------------------------------------------------------------------------
+upstream rollin_backend {
+    server __BACKEND_UPSTREAM__;   # 后端服务器私网地址，例如 10.0.0.12:12820
+    keepalive 32;
+}
+
+# 候选人域名的 /o/ 专用日志格式：不含 URI，避免一次性 Offer Token 进入访问日志
+log_format rollin_offer_safe '$remote_addr - $remote_user [$time_local] '
+                             '"$request_method [TOKEN_REDACTED] $server_protocol" '
+                             '$status $body_bytes_sent "$http_referer" "$http_user_agent"';
+
+# =============================================================================
+# 候选人域名：t.xxx.xxx —— 仅 Offer 页 + /api/public/* 白名单
+# =============================================================================
+server {
+    listen 80;
+    server_name __CANDIDATE_HOST__;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name __CANDIDATE_HOST__;
+
+    # 证书路径（certbot）：替换为实际路径
+    ssl_certificate     /etc/letsencrypt/live/__CANDIDATE_HOST__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__CANDIDATE_HOST__/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    # 前端静态产物（GitHub Actions 部署，符号链接切换到新版本）
+    root  /var/www/rollin/current;
+    index index.html;
+
+    server_tokens off;
+
+    # 安全响应头：定义在 server 层，下方 location 均继承。
+    # 注意——任何 location 内如果再写 add_header，会覆盖整个继承链，必须把这组头一并复制过去。
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    # CSP：Vite 产物为外链脚本 + React 内联样式；如需放开再调整
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_vary on;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+
+    client_max_body_size 2m;
+    client_body_timeout 15s;
+    client_header_timeout 15s;
+
+    # 存活探针只在宿主机本机可用，绝不对外暴露
+    location = /healthz {
+        return 404;
+    }
+
+    # ── API 白名单：仅 /api/public/*（Offer 查看/接受/放弃，Token 鉴权）──
+    location /api/public/ {
+        proxy_pass http://rollin_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;              # 承重：后端 CSRF Origin 校验依赖真实 Host
+        proxy_set_header X-Real-IP $remote_addr;  # chi middleware.RealIP 取真实客户端 IP
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 60s;
+    }
+
+    # 白名单之外的 /api/* 一律 404，错误体与后端 NOT_FOUND 形态一致（不泄露存在性）。
+    # 候选人域名绝不暴露 /api/platform|/api/activities|/api/import 等管理面。
+    location /api/ {
+        default_type application/json;
+        return 404 '{"code":"NOT_FOUND","message":"链接无效或已失效"}';
+    }
+
+    # ── Offer 深链 /o/{token}：SPA fallback 到 index.html，由前端路由接管 ──
+    # 访问页面本身不修改任何业务状态（需求 54 章），Token 也不写入访问日志。
+    location ^~ /o/ {
+        access_log /var/log/nginx/rollin-offer.access.log rollin_offer_safe;
+        try_files $uri /index.html;
+    }
+
+    # ── 页面所需静态资源（Vite 指纹产物 + 站点图标）──
+    location ^~ /assets/ {
+        expires 1y;                 # 指纹产物内容不变即 URL 不变，可长缓存
+        try_files $uri =404;
+    }
+    location = /favicon.svg {
+        expires 7d;
+        try_files $uri =404;
+    }
+    # index.html 不缓存：发版后浏览器立即拿到新版本
+    location = /index.html {
+        expires -1;
+    }
+
+    # 其余路径一律 404：候选人域名不提供后台/登录入口。
+    # 若希望根路径也给一个提示页，可改为 `try_files $uri /index.html;`（页面仍无管理 API 可用）。
+    location / {
+        return 404;
+    }
+}
+
+# =============================================================================
+# 管理域名：admin.xxx.xxx —— 后台 SPA + 全部 /api/*（含 Import API）
+# =============================================================================
+server {
+    listen 80;
+    server_name __ADMIN_HOST__;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name __ADMIN_HOST__;
+
+    ssl_certificate     /etc/letsencrypt/live/__ADMIN_HOST__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__ADMIN_HOST__/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    root  /var/www/rollin/current;
+    index index.html;
+
+    server_tokens off;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_vary on;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+
+    client_max_body_size 2m;
+    client_body_timeout 15s;
+    client_header_timeout 15s;
+
+    location = /healthz {
+        return 404;
+    }
+
+    # ── 全部 /api/* 反代后端 ──
+    # 覆盖：/api/platform/*（平台登录/参数/SMTP/活动管理）、/api/activities/*（活动工作区与
+    # 导出）、/api/import/*（外部系统 Bearer 单人导入，免 Cookie，走本域名调用）、
+    # /api/public/*（登录页站点名、邀请激活页；本域名同源放行即可，无需单列）。
+    # 说明：旧 /api/auth/*、/api/admin/* 两族已退役（04-api-contract.md §10），不存在。
+    location /api/ {
+        proxy_pass http://rollin_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 60s;     # XLSX 导出为同步生成（上限 5 万行），留足余量
+    }
+
+    # ── 静态资源与 index.html 缓存策略（同候选人域名）──
+    location ^~ /assets/ {
+        expires 1y;
+        try_files $uri =404;
+    }
+    location = /favicon.svg {
+        expires 7d;
+        try_files $uri =404;
+    }
+    location = /index.html {
+        expires -1;
+    }
+
+    # ── 后台 SPA：登录页、邀请激活 /invite/:token、/platform/*、/a/:slug/* ──
+    # 未命中文件/目录的路径一律回退 index.html，深链直开与刷新都靠它。
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

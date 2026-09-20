@@ -1,0 +1,80 @@
+# =============================================================================
+# 【已废弃 · 请勿用于生产】Rollin V1 旧版 docker compose 部署（backend + web 双容器）
+# =============================================================================
+# 本文件不是当前部署路径，仅作历史留档。
+#
+# 自 2026-09-20 起，线上部署改为：
+#   * 前端：GitHub Actions 构建 Vite 产物 → 服务器磁盘 → 宿主机 nginx 直接交付（不用 Docker）
+#   * 后端：GitHub Actions 构建镜像推 ghcr.io → 服务器 `docker run` 单容器（不用 compose）
+#   * MySQL / Redis：外部服务，任何 compose 里都不再出现数据库容器
+#   详见 .github/workflows/deploy-*.yml 与 deploy/README.md。
+#
+# 保留它的唯一目的：本仓库尚未纳入 git，删除不可恢复，因此改名降级而不是删除。
+# 确认新流程跑通后可以安全删除本文件。
+#
+# 另外注意：下面注释里的迁移命令写法有误。镜像 ENTRYPOINT 已经是 /app/rollin-server，
+# 再传一次二进制路径会把子命令挤到第二位，main() 会把它当成「启动服务」。
+# 正确写法是只传子命令：
+#     docker run --rm --env-file ./rollin-backend/.env rollin-backend:latest migrate up
+# =============================================================================
+
+# =============================================================================
+# Rollin V1 生产部署示例（P8-4 / P8-5）
+# =============================================================================
+# 拓扑（详见 deploy/README.md 与 deploy/nginx.conf.example）：
+#
+#   浏览器 ── 宿主机 nginx（TLS 终结 + 双域名白名单隔离）
+#               ├── 候选人域名 t.xxx.xxx     → /api/public/* → backend；其余 /api/* 一律 404
+#               ├── 管理域名   admin.xxx.xxx → /api/*        → backend（含 /api/import/* Bearer 调用）
+#               └── 两个域名的页面请求       → web（静态 SPA + fallback）
+#
+#   backend（本文件）  容器内 :8080，宿主机映射 127.0.0.1:8080
+#   web（本文件）      容器内 :80，  宿主机映射 127.0.0.1:8081
+#   MySQL / Redis      外部服务，不在本文件内启动任何数据库容器（P8-5）
+#
+# 安全边界（重要）：
+#   * 后端端口只绑定宿主机回环地址（127.0.0.1），仅供宿主机 nginx 反代访问；
+#     绝不能把 8080 暴露到公网或加防火墙放行——「候选人域名只见 /api/public/*」
+#     的域名隔离完全由边缘 nginx 白名单实现，直连后端端口即绕过该限制。
+#   * 若边缘 nginx 自身跑在容器里，请改为加入同一 docker 网络并删除 ports 映射。
+#
+# 迁移不在启动时自动执行：服务启动门禁要求 schema 已达到最低版本（06-migration.md），
+# 首次部署与版本升级都需手动执行（旧库升级请先用 mysqldump 备份，见 deploy/README.md）：
+#
+#   docker compose run --rm backend /app/rollin-server migrate up
+#   docker compose run --rm backend /app/rollin-server migrate status      # 查看版本
+#   docker compose run --rm backend /app/rollin-server migrate precheck    # 旧库预检
+#
+# 部署步骤概要：cp rollin-backend/.env.example rollin-backend/.env 并填写外部
+# MySQL/Redis 地址与凭证 → docker compose up -d --build → 执行上述 migrate up →
+# 配置宿主机 nginx（deploy/nginx.conf.example）→ 验收（deploy/README.md）。
+# =============================================================================
+
+name: rollin
+
+services:
+  backend:
+    build:
+      context: ./rollin-backend
+      dockerfile: Dockerfile
+    image: rollin-backend:latest
+    env_file:
+      # 注意：MYSQL_HOST / REDIS_HOST 必须填外部服务的可达地址；
+      # 容器内 127.0.0.1 指向容器自身，不是宿主机。
+      - ./rollin-backend/.env
+    ports:
+      - "127.0.0.1:8080:8080"   # 仅回环：宿主机 nginx 反代用，不对公网开放
+    restart: unless-stopped
+    # 健康检查已内置在镜像 HEALTHCHECK（GET /healthz），docker compose ps 即可查看
+
+  web:
+    build:
+      context: ./rollin-frontend
+      dockerfile: Dockerfile
+      args:
+        # 默认空 = 同源（/api 由边缘 nginx 反代到 backend）；一般不需要改
+        VITE_API_BASE: ""
+    image: rollin-frontend:latest
+    ports:
+      - "127.0.0.1:8081:80"     # 仅回环：宿主机 nginx 反代用
+    restart: unless-stopped

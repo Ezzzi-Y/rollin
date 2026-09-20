@@ -1,0 +1,194 @@
+# =============================================================================
+# Rollin 前端部署流水线
+# =============================================================================
+# 触发：push 到 main 且改动命中 rollin-frontend/**（或本文件/部署脚本），或手动触发。
+#
+# 流程：
+#   build  ─ npm ci + lint + build ─ 打成 tar.gz ─ 上传为 artifact（无需服务器）
+#   deploy ─ 下载 artifact ─ scp 脚本与产物 ─ SSH 执行：解包 → 原子切换 → nginx reload
+#
+# 前端不使用 Docker：构建产物直接在服务器上由宿主机 nginx 从磁盘目录交付，
+# 通过 current 符号链接实现原子切换与快速回滚（见 deploy/scripts/frontend-deploy.sh）。
+#
+# 需要的 Secrets：FRONTEND_SSH_HOST / FRONTEND_SSH_USER / FRONTEND_SSH_KEY、
+# ADMIN_BASE_URL、CANDIDATE_BASE_URL。
+# Repository Variables：BACKEND_UPSTREAM（例如 10.0.0.12:12820）。
+# SSH_USER 按当前部署方案配置为 root；前端不使用 Docker。
+# =============================================================================
+name: Deploy Frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rollin-frontend/**'
+      - 'deploy/nginx.conf.example'
+      - 'deploy/scripts/frontend-deploy.sh'
+      - '.github/workflows/deploy-frontend.yml'
+      - '.github/actions/prepare-ssh/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-frontend-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 构建前端产物
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.package.outputs.release }}
+      archive: ${{ steps.package.outputs.archive }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # package.json 未声明 engines，这里固定主版本，与 Dockerfile 的 node:22 对齐
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: rollin-frontend/package-lock.json
+
+      - name: 安装依赖
+        working-directory: rollin-frontend
+        run: npm ci
+
+      - name: 代码检查
+        working-directory: rollin-frontend
+        run: npm run lint
+
+      - name: 构建
+        working-directory: rollin-frontend
+        run: npm run build
+
+      - name: 打包产物
+        id: package
+        run: |
+          set -euo pipefail
+          short_sha="$(printf '%s' '${{ github.sha }}' | cut -c1-7)"
+          release="sha-${short_sha}"
+          archive="rollin-frontend-${release}.tar.gz"
+          # 归档根目录直接是 dist 的内容，服务器端按固定结构解包（见 frontend-deploy.sh）
+          tar -czf "$archive" -C rollin-frontend/dist .
+          {
+            echo "release=${release}"
+            echo "archive=${archive}"
+          } >> "$GITHUB_OUTPUT"
+          ls -lh "$archive"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: rollin-frontend-*.tar.gz
+          retention-days: 7
+
+  deploy:
+    name: 部署到服务器
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: .
+
+      - name: 渲染双域名 Nginx 配置
+        env:
+          ADMIN_BASE_URL: "${{ secrets.ADMIN_BASE_URL }}"
+          CANDIDATE_BASE_URL: "${{ secrets.CANDIDATE_BASE_URL }}"
+          BACKEND_UPSTREAM: "${{ vars.BACKEND_UPSTREAM }}"
+        run: |
+          set -euo pipefail
+
+          host_from_url() {
+            local value="$1" host
+            case "$value" in
+              https://*) host="${value#https://}" ;;
+              *) echo "::error::域名必须是 https:// 开头的完整地址"; return 1 ;;
+            esac
+            host="${host%%/*}"
+            [[ "$host" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "::error::域名格式非法"; return 1; }
+            [ -n "$host" ] || { echo "::error::域名不能为空"; return 1; }
+            printf '%s' "$host"
+          }
+
+          [ -n "$ADMIN_BASE_URL" ] || { echo "::error::缺少 Secrets.ADMIN_BASE_URL"; exit 1; }
+          [ -n "$CANDIDATE_BASE_URL" ] || { echo "::error::缺少 Secrets.CANDIDATE_BASE_URL"; exit 1; }
+          [ -n "$BACKEND_UPSTREAM" ] || { echo "::error::缺少 Secrets.BACKEND_UPSTREAM"; exit 1; }
+          [[ "$BACKEND_UPSTREAM" =~ ^[A-Za-z0-9._-]+:[0-9]+$ ]] || { echo "::error::BACKEND_UPSTREAM 必须是 host:port"; exit 1; }
+          ADMIN_HOST="$(host_from_url "$ADMIN_BASE_URL")"
+          CANDIDATE_HOST="$(host_from_url "$CANDIDATE_BASE_URL")"
+          sed \
+            -e "s/__ADMIN_HOST__/${ADMIN_HOST}/g" \
+            -e "s/__CANDIDATE_HOST__/${CANDIDATE_HOST}/g" \
+            -e "s/__BACKEND_UPSTREAM__/${BACKEND_UPSTREAM}/g" \
+            deploy/nginx.conf.example > rollin.conf
+
+      - name: 准备 SSH
+        uses: ./.github/actions/prepare-ssh
+        with:
+          host: ${{ secrets.FRONTEND_SSH_HOST }}
+          user: ${{ secrets.FRONTEND_SSH_USER }}
+          key: ${{ secrets.FRONTEND_SSH_KEY }}
+
+      - name: 上传产物与部署脚本
+        env:
+          ARCHIVE: ${{ needs.build.outputs.archive }}
+          REMOTE_DIR: /tmp/rollin-deploy-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          [ -f "$ARCHIVE" ] || { echo "::error::未找到构建产物 ${ARCHIVE}"; exit 1; }
+          ssh rollin-deploy "mkdir -p '$REMOTE_DIR' /opt/rollin/releases"
+          scp -q deploy/scripts/frontend-deploy.sh "rollin-deploy:${REMOTE_DIR}/frontend-deploy.sh"
+          scp -q rollin.conf "rollin-deploy:${REMOTE_DIR}/rollin.conf"
+          scp -q "$ARCHIVE" "rollin-deploy:${REMOTE_DIR}/"
+
+      - name: 执行部署
+        env:
+          RELEASE: ${{ needs.build.outputs.release }}
+          ARCHIVE: ${{ needs.build.outputs.archive }}
+          REMOTE_DIR: /tmp/rollin-deploy-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          ssh rollin-deploy "umask 077; cat > '$REMOTE_DIR/params.env'" <<PARAMS
+          RELEASE=${RELEASE}
+          ARCHIVE=${REMOTE_DIR}/${ARCHIVE}
+          NGINX_CONFIG=${REMOTE_DIR}/rollin.conf
+          PARAMS
+
+          ssh rollin-deploy "set -e; set -a; . '$REMOTE_DIR/params.env'; set +a; rm -f '$REMOTE_DIR/params.env'; bash '$REMOTE_DIR/frontend-deploy.sh'; rm -rf '$REMOTE_DIR'"
+
+      - name: 冒烟检查
+        env:
+          ADMIN_BASE_URL: "${{ secrets.ADMIN_BASE_URL }}"
+          CANDIDATE_BASE_URL: "${{ secrets.CANDIDATE_BASE_URL }}"
+        run: |
+          set -euo pipefail
+          ADMIN_BASE_URL="${ADMIN_BASE_URL%/}"
+          CANDIDATE_BASE_URL="${CANDIDATE_BASE_URL%/}"
+
+          failed=0
+          check() {
+            local name="$1" url="$2" expect="$3" code
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$url" || true)"
+            code="${code:-000}"
+            echo "${name} → HTTP ${code}（期望 ${expect}）"
+            if [ "$code" != "$expect" ]; then
+              echo "::error::${name} 冒烟检查失败：${url} 返回 ${code}"
+              failed=1
+            fi
+          }
+
+          check "管理域名 SPA 首页" "${ADMIN_BASE_URL}/" 200
+          check "候选人域名 Offer 深链 fallback" "${CANDIDATE_BASE_URL}/o/deploy-smoke-check" 200
+          check "候选人域名 API 白名单隔离" "${CANDIDATE_BASE_URL}/api/platform/settings" 404
+          check "候选人域名不暴露导入接口" "${CANDIDATE_BASE_URL}/api/import/candidates" 404
+
+          [ "$failed" = "0" ] || exit 1

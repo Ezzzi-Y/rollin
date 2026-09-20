@@ -1,0 +1,71 @@
+name: Prepare SSH
+description: >-
+  写入部署私钥、known_hosts 与 ~/.ssh/config，并暴露名为 rollin-deploy 的 Host 别名，
+  供后续 ssh / scp 直接使用。只依赖 OpenSSH 客户端，不引入第三方 Action。
+
+inputs:
+  host:
+    description: 目标服务器地址
+    required: true
+  user:
+    description: SSH 登录用户
+    required: true
+  key:
+    description: SSH 私钥全文（对应服务器上 authorized_keys 里的公钥）
+    required: true
+  port:
+    description: SSH 端口
+    required: false
+    default: '22'
+  known_hosts:
+    description: >-
+      可选的 known_hosts 内容。留空则用 ssh-keyscan 现场获取主机公钥
+      （存在理论上的中间人风险；生产建议把服务器主机公钥填在这里固定下来）。
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Write SSH material
+      shell: bash
+      env:
+        DEPLOY_HOST: ${{ inputs.host }}
+        DEPLOY_USER: ${{ inputs.user }}
+        DEPLOY_KEY: ${{ inputs.key }}
+        DEPLOY_PORT: ${{ inputs.port }}
+        DEPLOY_KNOWN_HOSTS: ${{ inputs.known_hosts }}
+      run: |
+        set -euo pipefail
+
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+
+        # 私钥经环境变量传入，不落在命令行参数里
+        printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_rollin_deploy
+        chmod 600 ~/.ssh/id_rollin_deploy
+
+        if [ -n "${DEPLOY_KNOWN_HOSTS:-}" ]; then
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+        else
+          echo "::warning::未配置 SSH_KNOWN_HOSTS，使用 ssh-keyscan 现场获取主机公钥"
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" > ~/.ssh/known_hosts 2>/dev/null \
+            || { echo "::error::ssh-keyscan 失败，无法获取 $DEPLOY_HOST 的主机公钥"; exit 1; }
+        fi
+        chmod 600 ~/.ssh/known_hosts
+
+        cat > ~/.ssh/config <<EOF
+        Host rollin-deploy
+          HostName ${DEPLOY_HOST}
+          Port ${DEPLOY_PORT}
+          User ${DEPLOY_USER}
+          IdentityFile ~/.ssh/id_rollin_deploy
+          IdentitiesOnly yes
+          StrictHostKeyChecking yes
+          ServerAliveInterval 30
+          ServerAliveCountMax 6
+        EOF
+        chmod 600 ~/.ssh/config
+
+        # 连通性自检：失败就早失败，避免把错误留到部署步骤里
+        ssh -o BatchMode=yes -o ConnectTimeout=15 rollin-deploy 'echo "SSH 连接正常：$(hostname)"'

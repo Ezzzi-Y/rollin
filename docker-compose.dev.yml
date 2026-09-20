@@ -1,0 +1,103 @@
+# =============================================================================
+# Rollin V1 本地开发 / 验收环境（P8-5）
+# 自带 MySQL 8.4 + Redis 7 + 后端容器；端口全部只绑定 127.0.0.1，数据落在命名卷。
+# 生产部署不要使用本文件 —— 生产用 docker-compose.yml（外部 MySQL/Redis，不落库容器）。
+# =============================================================================
+# 快速开始（与 rollin-backend/.env.example 逐字对应，无需改任何值）：
+#
+#   1) cp rollin-backend/.env.example rollin-backend/.env
+#   2) 首次建库：先起依赖并手动迁移（服务启动门禁要求 schema 已就绪，
+#      未迁移前 backend 会以明确报错重启，属预期）：
+#        docker compose -f docker-compose.dev.yml up -d mysql redis
+#        docker compose -f docker-compose.dev.yml run --rm backend migrate up
+#      注意只传子命令：镜像 ENTRYPOINT 已是 /app/rollin-server，写成
+#      `/app/rollin-server migrate up` 会把二进制当成第一个参数，进程会当成「启动服务」。
+#   3) 起后端：
+#        docker compose -f docker-compose.dev.yml up -d backend
+#   4) 验证：curl http://127.0.0.1:8080/healthz   →  {"status":"ok"}
+#
+#   一步构建并启动全部（backend 会先因空库重启，执行第 2 步的 migrate up 后自愈）：
+#        docker compose -f docker-compose.dev.yml up --build
+#
+# 主机本地跑后端（IDE / go run ./cmd/server）：
+#   只起依赖即可——rollin-backend/.env 里的 127.0.0.1:3306 / 127.0.0.1:6379
+#   恰好命中本文件的本机端口映射：
+#        docker compose -f docker-compose.dev.yml up -d mysql redis
+#
+# 凭证说明：数据库容器与 backend 覆盖项使用同一组 ${VAR:-默认值} 插值（优先读
+# shell 环境），因此逐字复制 .env.example（MYSQL_PASSWORD 留空）时两侧都会落到
+# 同一默认密码 rollin_dev，直接可用；在 .env / shell 中改了密码则两侧同步生效。
+# 仅用于本机开发，均为弱口令，严禁用于任何可被外网访问的环境。
+# =============================================================================
+
+name: rollin-dev
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rollin}
+      MYSQL_USER: ${MYSQL_USER:-rollin}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-rollin_dev}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rollin_dev_root}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    ports:
+      - "127.0.0.1:3306:3306"        # 仅本机：主机本地 go run 时 .env 直连此端口
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"        # 仅本机
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  backend:
+    build:
+      context: ./rollin-backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./rollin-backend/.env        # 邮箱/SMTP_ENC_KEY/超管引导等沿用 .env；
+                                     # 下方 environment 覆盖与本 compose 相关的连接项
+    environment:
+      HTTP_ADDRESS: ":8080"
+      # 容器内经服务名访问依赖，覆盖 .env 中的 127.0.0.1
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rollin}
+      MYSQL_USER: ${MYSQL_USER:-rollin}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-rollin_dev}
+      MYSQL_AUTO_CREATE_DATABASE: "true"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      # 本地为 http 直连，浏览器不回传 Secure Cookie；如改用 https 验收请删除此行
+      # 并在 rollin-backend/.env 中设置 COOKIE_SECURE=true
+      COOKIE_SECURE: "false"
+    ports:
+      - "127.0.0.1:8080:8080"        # 仅本机：curl /healthz 或直连 API 用
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  redis_data:

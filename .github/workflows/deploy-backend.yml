@@ -1,0 +1,176 @@
+# =============================================================================
+# Rollin 后端部署流水线
+# =============================================================================
+# 触发：push 到 main 且改动命中 rollin-backend/**（或本文件/部署脚本），或手动触发。
+#
+# 流程：
+#   build  ─ go vet + go test ─ 构建镜像并推送 ghcr.io ─（无需服务器）
+#   deploy ─ 上传部署脚本 ─ SSH 执行：备份 → pull → migrate up → 换容器 → 健康门禁/回滚
+#
+# 镜像坐标：ghcr.io/<owner>/rollin-backend:sha-<7位提交号>（同时打 latest 标签）
+#
+# 需要的 Secrets（Settings → Secrets and variables → Actions）：
+#   BACKEND_SSH_HOST        后端服务器地址
+#   BACKEND_SSH_USER        SSH 用户（当前方案配置为 root）
+#   BACKEND_SSH_KEY         SSH 私钥全文
+#   GHCR_TOKEN      ghcr.io 读取令牌（可选；留空则用本次运行的 GITHUB_TOKEN）
+#
+# 数据库/Redis 都是外部服务，本流水线不启动任何数据库容器，也不使用 docker compose。
+# =============================================================================
+name: Deploy Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rollin-backend/**'
+      - 'deploy/scripts/backend-deploy.sh'
+      - '.github/workflows/deploy-backend.yml'
+      - '.github/actions/prepare-ssh/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+# 同一条分支上的后端部署串行执行；不打断正在进行的部署（避免留下半完成状态）
+concurrency:
+  group: deploy-backend-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: rollin-backend
+
+jobs:
+  build:
+    name: 构建并推送镜像
+    runs-on: ubuntu-latest
+    outputs:
+      image_repo: ${{ steps.meta.outputs.image_repo }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: rollin-backend/go.mod
+          cache-dependency-path: rollin-backend/go.sum
+
+      # 部署门禁：静态检查与单测不过就不构建镜像
+      - name: 静态检查与单测
+        working-directory: rollin-backend
+        run: |
+          go vet ./...
+          go test -count=1 ./...
+
+      - name: 计算镜像坐标
+        id: meta
+        run: |
+          set -euo pipefail
+          # GHCR 只接受小写仓库名，owner 可能含大写
+          owner="$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          short_sha="$(printf '%s' '${{ github.sha }}' | cut -c1-7)"
+          {
+            echo "image_repo=${REGISTRY}/${owner}/${IMAGE_NAME}"
+            echo "image_tag=sha-${short_sha}"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: rollin-backend
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image_repo }}:${{ steps.meta.outputs.image_tag }}
+            ${{ steps.meta.outputs.image_repo }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: 部署到服务器
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 准备 SSH
+        uses: ./.github/actions/prepare-ssh
+        with:
+          host: ${{ secrets.BACKEND_SSH_HOST }}
+          user: ${{ secrets.BACKEND_SSH_USER }}
+          key: ${{ secrets.BACKEND_SSH_KEY }}
+
+      - name: 上传部署脚本
+        env:
+          REMOTE_DIR: /tmp/rollin-deploy-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          ssh rollin-deploy "mkdir -p '$REMOTE_DIR'"
+          # 经标准输入传输，不把脚本内容拼进远端命令行
+          ssh rollin-deploy "umask 077; cat > '$REMOTE_DIR/backend-deploy.sh' && chmod 700 '$REMOTE_DIR/backend-deploy.sh'" \
+            < deploy/scripts/backend-deploy.sh
+
+      - name: 执行部署
+        env:
+          IMAGE_REPO: ${{ needs.build.outputs.image_repo }}
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+          GHCR_USER: ${{ github.actor }}
+          # 优先用专用令牌（可跨仓库/长期有效）；没有则回退到本次运行的 GITHUB_TOKEN
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+          BACKUP_KEEP: ${{ vars.BACKUP_KEEP || '7' }}
+          HEALTH_TIMEOUT: ${{ vars.BACKEND_HEALTH_TIMEOUT || '90' }}
+          ADMIN_BASE_URL: "${{ secrets.ADMIN_BASE_URL }}"
+          CANDIDATE_BASE_URL: "${{ secrets.CANDIDATE_BASE_URL }}"
+          HOST_BIND: "${{ vars.BACKEND_BIND_ADDRESS || '0.0.0.0' }}"
+          REMOTE_DIR: /tmp/rollin-deploy-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          [ -n "$ADMIN_BASE_URL" ] || { echo "::error::缺少 Secrets.ADMIN_BASE_URL"; exit 1; }
+          [ -n "$CANDIDATE_BASE_URL" ] || { echo "::error::缺少 Secrets.CANDIDATE_BASE_URL"; exit 1; }
+
+          # 部署参数写入远端临时文件（600），避免出现在远端进程列表中
+          ssh rollin-deploy "umask 077; cat > '$REMOTE_DIR/params.env'" <<PARAMS
+          IMAGE_REPO=${IMAGE_REPO}
+          IMAGE_TAG=${IMAGE_TAG}
+          GHCR_USER=${GHCR_USER}
+          GHCR_TOKEN=${GHCR_TOKEN}
+          BACKUP_KEEP=${BACKUP_KEEP}
+          HEALTH_TIMEOUT=${HEALTH_TIMEOUT}
+          ADMIN_BASE_URL=${ADMIN_BASE_URL}
+          CANDIDATE_BASE_URL=${CANDIDATE_BASE_URL}
+          HOST_BIND=${HOST_BIND}
+          PARAMS
+
+          ssh rollin-deploy "set -e; set -a; . '$REMOTE_DIR/params.env'; set +a; rm -f '$REMOTE_DIR/params.env'; bash '$REMOTE_DIR/backend-deploy.sh'; rm -rf '$REMOTE_DIR'"
+
+      - name: 冒烟检查
+        env:
+          ADMIN_BASE_URL: "${{ secrets.ADMIN_BASE_URL }}"
+        run: |
+          set -euo pipefail
+          ADMIN_BASE_URL="${ADMIN_BASE_URL%/}"
+
+          check() {
+            local name="$1" url="$2" expect="$3" code
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$url" || true)"
+            code="${code:-000}"
+            echo "${name} → HTTP ${code}（期望 ${expect}）"
+            if [ "$code" != "$expect" ]; then
+              echo "::error::${name} 冒烟检查失败：${url} 返回 ${code}"
+              return 1
+            fi
+          }
+
+          check "后端公开端点" "${ADMIN_BASE_URL}/api/public/platform" 200
+          check "健康检查不被边缘层暴露" "${ADMIN_BASE_URL}/healthz" 404
