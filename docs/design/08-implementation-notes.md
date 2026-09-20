@@ -248,7 +248,20 @@ P5 以纯只读 + effectiveStatus 方案重建）。
    发送超时 `MAIL_SMTP_TIMEOUT_SECONDS`（默认 30s，config.MailSendTimeout）；
    net/smtp：显式 Dial + 整体 deadline，STARTTLS 自动协商，AUTH 按 ADVERTISED
    机制选 PLAIN/CRAM-MD5。
-6. **模板渲染（internal/mail/render.go）**：白名单 OFFER =
+6. **发件服务器限流保护（per-host 发送间隔，internal/mail/pacer.go）**：同一
+   SMTP host（如 smtp.qq.com / smtp.163.com，按 `cfg.Host` 小写归一后记账）两次
+   提交之间强制休息一个间隔，各 host 独立计时（固定 60s）。实现为进程内
+   `sendPacer` 记账器：发送前 `ReadyAt` 检查，未到点 ⇒ `DeferTask` 把任务退回
+   PENDING 并把 `next_retry_at` 推到该 host 的可发送时刻——**不计失败**
+   （retry_count/last_error 不动，租约守卫同 CompleteTask），同一扫描批次中其它
+   host 的任务照常出队，队列永不阻塞等计时器；`Record` 在发送尝试结束后落账
+   （成功/失败都算接触过服务器）。间隔从不占用租约：任务退回 PENDING 而非
+   持有 SENDING 睡眠，避免超过 10 分钟租约被恢复扫描重排队导致重复发送。
+   间隔固定 60 秒，内置在 `DefaultWorkerConfig`（`SendInterval` 字段，0 仅测试
+   用于关闭），不提供环境变量配置。记账为进程内状态：单实例部署精确生效；
+   多实例时全局速率为 实例数 × 1/间隔（SKIP LOCKED 认领仍安全，任务不会重复
+   发送——间隔由各自进程的 next_retry_at/记账共同兜底）。
+7. **模板渲染（internal/mail/render.go）**：白名单 OFFER =
    `candidateName/activityTitle/offerUrl/expiresAt/siteName`（契约固定），
    INVITE_OWNER/INVITE_ADMIN = `inviteeName/inviteeEmail/activityTitle/inviteUrl/
    expiresAt/siteName/role`（role 渲染为 负责人/管理员）。PUT 校验白名单外的
@@ -258,7 +271,7 @@ P5 以纯只读 + effectiveStatus 方案重建）。
    可编辑 OFFER；INVITE_* 为平台默认。INVITE 链接 = `adminBaseUrl` +
    `/invite/{token}`；OFFER 链接 = `publicBaseUrl(CANDIDATE_BASE_URL)` +
    `/o/{token}`（缺配置 ⇒ 可重试发送失败）。
-7. **端点与权限**：`GET/PUT /api/activities/{slug}/mail-templates`、
+8. **端点与权限**：`GET/PUT /api/activities/{slug}/mail-templates`、
    `GET /api/activities/{slug}/mail-tasks`、`POST .../mail-tasks/{id}/retry` 注册于
    新文件 `httpapi/routes_mail.go`，以**根路由完整路径**挂载（不动
    routes_activity.go；chi 先深后浅回溯，与既有活动子路由共存）。中间件链与活动
@@ -269,7 +282,7 @@ P5 以纯只读 + effectiveStatus 方案重建）。
    可发，否则 CONFLICT）+ `WHERE status='FAILED' AND activity_id=?` 条件更新
    （retry_count 清 0、清 last_error/租约）+ `MAIL_TASK_REQUEUED` 审计；跨活动
    任务 ID 一律 NOT_FOUND。CANCELLED 永不自动复活（88.1.6/D4）。
-8. **测试**：internal/mail（租约认领/守卫/恢复、取消竞态、发送前复查矩阵、
+9. **测试**：internal/mail（租约认领/守卫/恢复、取消竞态、发送前复查矩阵、
    Token-per-attempt 与截止时间不变、重试上限、SMTP 缺失可重试、INVITE 生命周期、
    Requeue 规则、渲染白名单/转义、模板 CRUD 审计）；internal/smtpconfig
    （SendTest 修复回归、版本绑定失效、跨作用域不回退）；internal/mailtoken

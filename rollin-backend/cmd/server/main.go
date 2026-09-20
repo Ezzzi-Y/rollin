@@ -259,7 +259,8 @@ func runServer(logger *slog.Logger, cfg config.Config) int {
 
 	// P3: the reliable mail worker drains mail_task with lease claiming, exponential
 	// backoff and the pre-send business rechecks (02 §4). It shares the process ctx so
-	// SIGINT/SIGTERM stop it with the server.
+	// SIGINT/SIGTERM stop it with the server. The per-host send rest (发件服务器限流
+	// 保护: 同一服务器发完一封休息一分钟再发下一封) is contractual inside the worker.
 	mailWorker := mail.NewWorker(mail.WorkerDeps{
 		DB:         handle,
 		Repo:       mail.NewGormRepository(handle),

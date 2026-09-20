@@ -23,6 +23,10 @@ type Repository interface {
 	RequeueExpiredLease(ctx context.Context, tx *gorm.DB, now time.Time, olderThan time.Duration) error
 	// CompleteTask writes the terminal SENDING outcome; only SENT carries sent_at.
 	CompleteTask(ctx context.Context, tx *gorm.DB, id uint64, leaseOwner string, status string, lastError *string, nextRetryAt *time.Time) (bool, error)
+	// DeferTask returns one claimed task to PENDING until nextRetryAt WITHOUT counting
+	// a retry — the per-host send pacing is not a failure (sendPacer doc). Lease-guarded
+	// like CompleteTask, so a lease recovered in between refuses the defer.
+	DeferTask(ctx context.Context, tx *gorm.DB, id uint64, leaseOwner string, nextRetryAt time.Time) (bool, error)
 	// CancelTask cancels from PENDING/SENDING with a reason, refusing to overwrite other
 	// terminal results.
 	CancelTask(ctx context.Context, tx *gorm.DB, id uint64, reason string) (bool, error)
@@ -114,6 +118,21 @@ func (r *gormRepository) CompleteTask(ctx context.Context, tx *gorm.DB, id uint6
 	result := tx.WithContext(ctx).Model(&model.MailTask{}).
 		Where("id = ? AND status = ? AND lease_owner = ?", id, model.MailTaskSending, leaseOwner).
 		Updates(columns)
+	return result.RowsAffected == 1, result.Error
+}
+
+// DeferTask is the pacing counterpart of CompleteTask: SENDING→PENDING with a future
+// due time, lease and error state cleared, but retry_count and last_error untouched —
+// a deferred task has NOT failed an attempt (02 §4 counts only real send attempts).
+func (r *gormRepository) DeferTask(ctx context.Context, tx *gorm.DB, id uint64, leaseOwner string, nextRetryAt time.Time) (bool, error) {
+	result := tx.WithContext(ctx).Model(&model.MailTask{}).
+		Where("id = ? AND status = ? AND lease_owner = ?", id, model.MailTaskSending, leaseOwner).
+		Updates(map[string]any{
+			"status":        model.MailTaskPending,
+			"next_retry_at": nextRetryAt,
+			"lease_owner":   nil,
+			"locked_at":     nil,
+		})
 	return result.RowsAffected == 1, result.Error
 }
 

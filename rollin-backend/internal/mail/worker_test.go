@@ -80,8 +80,10 @@ func newTestWorker(t *testing.T, db *gorm.DB, sender Sender) *Worker {
 }
 
 // seedActivitySMTP inserts a verified SMTP config for the given scope pointing at the
-// server (platform scope resolves the row at activity_id=0).
-func seedActivitySMTP(t *testing.T, db *gorm.DB, scope string, activityID uint64, port int) {
+// server (platform scope resolves the row at activity_id=0). host is explicit because
+// the send pacer keys on cfg.Host — tests use "localhost" / "127.0.0.1" as distinct
+// servers even when both would dial the same endpoint.
+func seedActivitySMTP(t *testing.T, db *gorm.DB, scope string, activityID uint64, host string, port int) {
 	t.Helper()
 	cipher, err := secretbox.Seal(make([]byte, 32), []byte("smtp-secret"))
 	if err != nil {
@@ -90,7 +92,7 @@ func seedActivitySMTP(t *testing.T, db *gorm.DB, scope string, activityID uint64
 	now := time.Now().UTC()
 	if err := db.Create(&model.SMTPConfig{
 		Scope: scope, ActivityID: activityID,
-		Host: "localhost", Port: port, Encryption: smtpconfig.EncryptionNone, Username: "noreply@example.edu.cn",
+		Host: host, Port: port, Encryption: smtpconfig.EncryptionNone, Username: "noreply@example.edu.cn",
 		PasswordCipher: cipher, FromAddress: "Rollin <noreply@example.edu.cn>",
 		VerifiedAt: &now, ConfigVersion: 1,
 	}).Error; err != nil {
@@ -205,7 +207,7 @@ func TestWorkerOfferSendHappyPath(t *testing.T) {
 	activityID := seedActivity(t, db, nil)
 	offerID := seedOffer(t, db, activityID, nil)
 	server := newFakeSMTPServer(t)
-	seedActivitySMTP(t, db, model.ScopeActivity, activityID, server.Port())
+	seedActivitySMTP(t, db, model.ScopeActivity, activityID, "localhost", server.Port())
 
 	svc := New(db, NewGormRepository(db), audit.New(db))
 	taskID := mustQueueOffer(t, svc, db, model.ScopeActivity, activityID, offerID, &OfferPayload{SuccessMessage: "欢迎加入！"})
@@ -318,7 +320,7 @@ func TestWorkerOfferRetryMintsNewTokenAndKeepsDeadline(t *testing.T) {
 	db := newMailTestDB(t)
 	activityID := seedActivity(t, db, nil)
 	offerID := seedOffer(t, db, activityID, nil)
-	seedActivitySMTP(t, db, model.ScopeActivity, activityID, 1) // config resolves; Sender is scripted
+	seedActivitySMTP(t, db, model.ScopeActivity, activityID, "localhost", 1) // config resolves; Sender is scripted
 	var offerBefore model.Offer
 	db.First(&offerBefore, offerID)
 	sender := &scriptedSender{results: []error{errors.New("dial tcp: connection refused"), nil}}
@@ -400,7 +402,7 @@ func TestWorkerFailureCeilingReachesFAILED(t *testing.T) {
 	db := newMailTestDB(t)
 	activityID := seedActivity(t, db, nil)
 	offerID := seedOffer(t, db, activityID, nil)
-	seedActivitySMTP(t, db, model.ScopeActivity, activityID, 1) // config resolves; Sender is scripted
+	seedActivitySMTP(t, db, model.ScopeActivity, activityID, "localhost", 1) // config resolves; Sender is scripted
 	sender := &scriptedSender{results: []error{errors.New("smtp dead")}}
 	worker := newTestWorker(t, db, sender)
 
@@ -430,7 +432,7 @@ func TestWorkerInviteLifecycle(t *testing.T) {
 		db := newMailTestDB(t)
 		activityID := seedActivity(t, db, nil)
 		server := newFakeSMTPServer(t)
-		seedActivitySMTP(t, db, model.ScopePlatform, 0, server.Port()) // platform scope row
+		seedActivitySMTP(t, db, model.ScopePlatform, 0, "localhost", server.Port()) // platform scope row
 		worker := newTestWorker(t, db, nil)
 
 		raw, inviteID, userID := seedInvite(t, db, activityID, model.MemberRoleOwner, nil, nil)
@@ -481,7 +483,7 @@ func TestWorkerInviteLifecycle(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			db := newMailTestDB(t)
 			activityID := seedActivity(t, db, nil)
-			seedActivitySMTP(t, db, model.ScopeActivity, activityID, 1) // config present; sender must never be reached
+			seedActivitySMTP(t, db, model.ScopeActivity, activityID, "localhost", 1) // config present; sender must never be reached
 			sender := &scriptedSender{}
 			worker := newTestWorker(t, db, sender)
 

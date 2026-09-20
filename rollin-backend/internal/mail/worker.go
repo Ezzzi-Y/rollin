@@ -6,6 +6,9 @@ package mail
 //
 //	claim (atomic PENDING→SENDING, lease_owner+locked_at, FOR UPDATE SKIP LOCKED)
 //	  → recheck #1 (activity ACTIVE, subject sendable)
+//	  → SMTP host pacing gate: when the host is still resting since its last submission
+//	    (sendPacer), the task returns to PENDING with next_retry_at = the host's next
+//	    allowed send time — no retry_count bump, other hosts' tasks keep draining
 //	  → OFFER: mint token in a SHORT transaction that re-reads the offer (recheck #2)
 //	    — only the SHA-256 hash is stored, the raw value exists only in this mail
 //	  → recheck #3 (lease still ours, subject still sendable)
@@ -55,10 +58,16 @@ type WorkerConfig struct {
 	// BackoffBase / BackoffMax shape the exponential retry delay: base·2^retry, capped.
 	BackoffBase time.Duration
 	BackoffMax  time.Duration
+	// SendInterval is the minimum rest between two submissions to the SAME SMTP host
+	// (发件服务器限流保护: smtp.qq.com / 网易等对发送频率有限制). DefaultWorkerConfig
+	// fixes it at one minute per host (每个服务器有自己的间隔) and it is deliberately
+	// NOT env-configurable; zero disables the pacing, which the tests rely on.
+	SendInterval time.Duration
 }
 
 // DefaultWorkerConfig derives the defaults from the deployment config (poll cadence and
-// SMTP send timeout are configurable there: MAIL_SMTP_TIMEOUT_SECONDS).
+// SMTP send timeout are configurable there: MAIL_SMTP_TIMEOUT_SECONDS). The per-host
+// send rest is contractual and stays at one minute.
 func DefaultWorkerConfig(every, sendTimeout time.Duration) WorkerConfig {
 	if every <= 0 {
 		every = 15 * time.Second
@@ -67,12 +76,13 @@ func DefaultWorkerConfig(every, sendTimeout time.Duration) WorkerConfig {
 		sendTimeout = 30 * time.Second
 	}
 	return WorkerConfig{
-		Every:       every,
-		Lease:       LeaseTimeout,
-		SendTimeout: sendTimeout,
-		Batch:       20,
-		BackoffBase: time.Minute,
-		BackoffMax:  time.Hour,
+		Every:        every,
+		Lease:        LeaseTimeout,
+		SendTimeout:  sendTimeout,
+		Batch:        20,
+		BackoffBase:  time.Minute,
+		BackoffMax:   time.Hour,
+		SendInterval: time.Minute,
 	}
 }
 
@@ -99,6 +109,7 @@ type Worker struct {
 	deps  WorkerDeps
 	cfg   WorkerConfig
 	owner string
+	pacer *sendPacer
 	log   *slog.Logger
 }
 
@@ -117,7 +128,13 @@ func NewWorker(deps WorkerDeps, cfg WorkerConfig) *Worker {
 	if deps.Sender == nil {
 		deps.Sender = netSmtpSender{}
 	}
-	return &Worker{deps: deps, cfg: cfg, owner: leaseOwner(), log: deps.Logger}
+	return &Worker{
+		deps:  deps,
+		cfg:   cfg,
+		owner: leaseOwner(),
+		pacer: newSendPacer(cfg.SendInterval),
+		log:   deps.Logger,
+	}
 }
 
 func leaseOwner() string {
@@ -143,7 +160,7 @@ func (w *Worker) Start(ctx context.Context) {
 
 // Run drives the scan loop on the calling goroutine.
 func (w *Worker) Run(ctx context.Context) {
-	w.log.Info("mail worker started", "lease", w.owner, "every", w.cfg.Every.String())
+	w.log.Info("mail worker started", "lease", w.owner, "every", w.cfg.Every.String(), "sendInterval", w.cfg.SendInterval.String())
 	w.RunOnce(ctx)
 	ticker := time.NewTicker(w.cfg.Every)
 	defer ticker.Stop()
@@ -222,6 +239,11 @@ func (w *Worker) processOffer(ctx context.Context, task *model.MailTask) {
 		w.finishFailure(ctx, task, err)
 		return
 	}
+	// 发件服务器限流保护: same-host submissions rest SendInterval; a deferred task
+	// never mints a token (the gate runs before any side effect).
+	if !w.pacingGate(ctx, task, cfg) {
+		return
+	}
 	// Recheck #2 + Offer Token mint: one SHORT transaction that re-reads the offer
 	// before inserting the hash (88.6.1: token generated at send attempt, never in the
 	// offer-creation transaction). The raw value exists only in this process's mail.
@@ -247,8 +269,10 @@ func (w *Worker) processOffer(ctx context.Context, task *model.MailTask) {
 		w.finishFailure(ctx, task, err)
 		return
 	}
-	if err := w.deps.Sender.Send(ctx, cfg, task.Recipient, subject, body, w.cfg.SendTimeout); err != nil {
-		w.finishFailure(ctx, task, err)
+	sendErr := w.deps.Sender.Send(ctx, cfg, task.Recipient, subject, body, w.cfg.SendTimeout)
+	w.recordSend(cfg)
+	if sendErr != nil {
+		w.finishFailure(ctx, task, sendErr)
 		return
 	}
 	// Only a real SMTP success reaches SENT+sent_at (lease-guarded conditional update).
@@ -371,6 +395,10 @@ func (w *Worker) processInvite(ctx context.Context, task *model.MailTask) {
 		w.finishFailure(ctx, task, err)
 		return
 	}
+	// 发件服务器限流保护: same-host submissions rest SendInterval.
+	if !w.pacingGate(ctx, task, cfg) {
+		return
+	}
 	// No token minting here (the raw invite token travels in the payload), so recheck #3
 	// is the second and final gate: lease still ours + subject still sendable.
 	if !w.stillOurs(ctx, task) {
@@ -385,8 +413,10 @@ func (w *Worker) processInvite(ctx context.Context, task *model.MailTask) {
 		w.finishFailure(ctx, task, err)
 		return
 	}
-	if err := w.deps.Sender.Send(ctx, cfg, task.Recipient, subject, body, w.cfg.SendTimeout); err != nil {
-		w.finishFailure(ctx, task, err)
+	sendErr := w.deps.Sender.Send(ctx, cfg, task.Recipient, subject, body, w.cfg.SendTimeout)
+	w.recordSend(cfg)
+	if sendErr != nil {
+		w.finishFailure(ctx, task, sendErr)
 		return
 	}
 	if _, err := w.deps.Repo.CompleteTask(ctx, w.deps.DB, task.ID, w.owner, model.MailTaskSent, nil, nil); err != nil {
@@ -420,6 +450,33 @@ func (w *Worker) renderInvite(ctx context.Context, task *model.MailTask, payload
 }
 
 // ---------- shared helpers ----------
+
+// pacingGate enforces the per-host send interval (sendPacer): when the task's SMTP
+// host is still resting since its last submission, the task returns to PENDING until
+// the host's next allowed send time and the caller stops processing it — tasks for
+// other hosts keep draining in the same scan. Runs after resolveSMTP and BEFORE any
+// side effect (token minting), so a deferred task never leaves a token behind.
+func (w *Worker) pacingGate(ctx context.Context, task *model.MailTask, cfg *smtpconfig.Effective) bool {
+	readyAt, ok := w.pacer.ReadyAt(cfg.Host, time.Now().UTC())
+	if ok {
+		return true
+	}
+	w.log.Info("mail task deferred by send pacing",
+		"task", task.ID, "host", cfg.Host, "readyAt", readyAt.Format(time.RFC3339))
+	if claimed, err := w.deps.Repo.DeferTask(ctx, w.deps.DB, task.ID, w.owner, readyAt); err != nil {
+		w.log.Error("mail task pacing defer", "task", task.ID, "error", err)
+	} else if !claimed {
+		// The lease was recovered in between — the new holder owns the outcome.
+		w.log.Warn("mail task pacing defer lost the lease", "task", task.ID)
+	}
+	return false
+}
+
+// recordSend stamps the finished submission on the host's pacing clock — both on
+// success and on failure (a failed attempt contacted the server all the same).
+func (w *Worker) recordSend(cfg *smtpconfig.Effective) {
+	w.pacer.Record(cfg.Host, time.Now().UTC())
+}
 
 // resolveSMTP loads the task scope's own SMTP config. It never falls back to the other
 // scope (需求 12/13 章); an unverified/missing config is a RETRYABLE failure so tasks
