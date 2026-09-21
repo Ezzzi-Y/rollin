@@ -16,11 +16,13 @@
 | 后端环境变量 | 服务器 `/etc/rollin/backend.env`（600，唯一存真实凭证处，不入 git） |
 | 迁移 | 由后端流水线在换容器**之前**执行；迁移前自动 mysqldump 到 `/opt/rollin/backups/`（默认留 7 份） |
 | 数据库降级 | 不支持自动降级；代码回滚不回退 schema，恢复只能靠备份 |
+| 部署通知 | 飞书群机器人卡片，部署**开始/结束各一条**；Secrets：`FEISHU_WEBHOOK`（+可选 `FEISHU_WEBHOOK_SECRET` 签名密钥）；不配则整条跳过 |
 
 **关键文件**
 
 - `.github/workflows/deploy-backend.yml` / `deploy-frontend.yml`
 - `.github/actions/prepare-ssh/action.yml`
+- `.github/actions/notify-feishu/`（`action.yml` + `send.py`，飞书卡片渲染/签名/发送）
 - `deploy/scripts/backend-deploy.sh` / `frontend-deploy.sh`
 - `deploy/nginx.conf.example`（宿主机 nginx，双域名 + 白名单）
 - `deploy/README.md`（部署手册，改部署逻辑时同步更新）
@@ -39,6 +41,11 @@
    （`rollin_offer_safe`）防止一次性 Offer Token 落盘（验收项 A22）。
 5. `docker-compose.yml` 已改名为 `docker-compose.legacy.yml` 留档，**勿用于生产**。
    `docker-compose.dev.yml` 仅供本地开发/验收。
+6. **部署通知失败绝不能判部署失败**：`notify-feishu` 把所有异常降级为 `::warning::` 且
+   `exit 0`。另外 webhook 地址是凭证，日志里一律不得出现。
+7. **待订正（未改）**：`deploy-backend.yml` 的 `HOST_BIND` 默认回退到 `0.0.0.0`，
+   与 `backend-deploy.sh` 的 `127.0.0.1` 默认、README「8080 绝不公网开放」三处不一致；
+   README §3.1 的 Secrets 名（`SSH_HOST` 等）与 workflow 实际用的 `BACKEND_SSH_HOST` 等也不符。
 
 **仓库状态**：截至 2026-09-20 **尚未 git init**，需要用户自行初始化并推到 GitHub，
 流水线才能生效。

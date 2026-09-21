@@ -20,8 +20,6 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/api': {
           target: apiTarget,
-          // Preserve the browser Host so the backend's development CSRF check
-          // sees the same host as the browser (normally localhost:5173).
           changeOrigin: false,
           secure: false,
         },
