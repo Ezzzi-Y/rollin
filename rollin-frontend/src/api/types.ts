@@ -8,8 +8,8 @@
 /** 活动状态（契约 §3.1 / 需求 88.1） */
 export type ActivityStatus = 'ACTIVE' | 'DISABLED' | 'ARCHIVED'
 
-/** Offer 发放模式（契约 §3.2） */
-export type OfferMode = 'AUTO' | 'MANUAL'
+/** Offer 发放模式（契约 §3.2）：AUTO 自动滚动、BATCH 分批发放、MANUAL 手动发放 */
+export type OfferMode = 'AUTO' | 'BATCH' | 'MANUAL'
 
 /** 活动成员关系状态 */
 export type MemberStatus = 'ACTIVE' | 'DISABLED'

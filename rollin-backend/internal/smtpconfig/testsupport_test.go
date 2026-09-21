@@ -54,7 +54,7 @@ CREATE TABLE smtp_config (
 );
 CREATE TABLE audit_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT, scope TEXT NOT NULL, activity_id INTEGER NOT NULL DEFAULT 0,
-  actor_type TEXT NOT NULL, actor_user_id INTEGER, action TEXT NOT NULL,
+  actor_type TEXT NOT NULL, actor_user_id INTEGER, actor_candidate_id INTEGER, action TEXT NOT NULL,
   target_type TEXT, target_id INTEGER, change_summary TEXT, detail JSON,
   request_id TEXT, ip_address TEXT, user_agent TEXT, created_at DATETIME
 );

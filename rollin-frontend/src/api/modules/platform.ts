@@ -72,8 +72,10 @@ export interface CreateActivityPayload {
   description?: string
   /** 必填，≥1 */
   quota: number
-  /** 可选，AUTO | MANUAL；缺省取平台默认参数 */
+  /** 可选，AUTO | BATCH | MANUAL；缺省取平台默认参数 */
   offerMode?: OfferMode
+  /** 可选，仅 BATCH 模式：默认每批人数 1–1000；缺省取平台 defaultBatchSize */
+  batchSize?: number
   /** 可选，1–720；缺省 72 */
   offerExpireHours?: number
 }

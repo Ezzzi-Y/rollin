@@ -32,8 +32,9 @@ const (
 	LockKey = "rollin_migration"
 	// MinimumSchemaVersion is the lowest schema version the current code can serve.
 	// The server refuses to start on an older database (06-migration.md §1.2).
-	// V3: application.qq and application.class_name are read by candidate imports.
-	MinimumSchemaVersion = uint64(3)
+	// V4: BATCH offer mode (activity.offer_mode/batch_size, offer.source/batch_id,
+	// offer_batch) and audit_log.actor_candidate_id.
+	MinimumSchemaVersion = uint64(4)
 )
 
 // Step is one ordered statement (or logical unit) inside a migration.
@@ -76,7 +77,7 @@ func (m Migration) Checksum() string {
 
 // All returns every registered migration in strict version order.
 func All() []Migration {
-	list := []Migration{v1(), v2(), v3()}
+	list := []Migration{v1(), v2(), v3(), v4()}
 	sort.Slice(list, func(i, j int) bool { return list[i].Version < list[j].Version })
 	return list
 }

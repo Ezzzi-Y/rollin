@@ -49,6 +49,8 @@ const (
 	ActionRankingTieAdjusted         = "RANKING_TIE_ADJUSTED"
 	ActionOfferIssuedManual          = "OFFER_ISSUED_MANUAL"
 	ActionOfferIssuedAuto            = "OFFER_ISSUED_AUTO"
+	ActionOfferIssuedBatch           = "OFFER_ISSUED_BATCH"
+	ActionOfferBatchIssued           = "OFFER_BATCH_ISSUED"
 	ActionOfferEmailResent           = "OFFER_EMAIL_RESENT"
 	ActionMailTaskRequeued           = "MAIL_TASK_REQUEUED"
 	ActionOfferSpecialIssued         = "OFFER_SPECIAL_ISSUED"
@@ -64,26 +66,32 @@ const (
 // Entry is one audit record. Detail carries structured before/after JSON; the
 // scope+activity pair decides which console can ever read it back.
 type Entry struct {
-	Scope         string
-	ActivityID    uint64
-	ActorType     string
-	ActorUserID   *uint64
-	Action        string
-	TargetType    string
-	TargetID      *uint64
-	ChangeSummary string
-	Detail        datatypes.JSON
-	RequestID     string
-	IPAddress     string
-	UserAgent     string
+	Scope       string
+	ActivityID  uint64
+	ActorType   string
+	ActorUserID *uint64
+	// ActorCandidateID identifies the acting candidate for the public token paths
+	// (ActorType=CANDIDATE); resolved to display data at read time, never stored as text.
+	ActorCandidateID *uint64
+	Action           string
+	TargetType       string
+	TargetID         *uint64
+	ChangeSummary    string
+	Detail           datatypes.JSON
+	RequestID        string
+	IPAddress        string
+	UserAgent        string
 }
 
 // AuditRow is one OWNER-visible audit entry: the stored record plus the display name of
-// the acting account when the actor is an activity user (OWNER/ADMIN); SYSTEM and
-// CANDIDATE actors have no user row and keep ActorName nil (04 §5.15 item shape).
+// the acting account when the actor is an activity user (OWNER/ADMIN), or the acting
+// candidate's identity (activity-local name + student_id) when the actor is a candidate
+// (04 §5.15 item shape; SYSTEM keeps both nil).
 type AuditRow struct {
 	model.AuditLog
-	ActorName *string
+	ActorName        *string
+	ActorStudentID   *string
+	ActorCandidateID *uint64
 }
 
 // Service is the audit domain API. The write path is final since P1/P2; the OWNER-facing
@@ -124,13 +132,14 @@ func New(db *gorm.DB) Service { return &service{db: db, repo: NewGormRepository(
 // Record is final in P1: same-transaction write, nothing else.
 func (s *service) Record(exec *gorm.DB, entry Entry) error {
 	row := model.AuditLog{
-		Scope:         entry.Scope,
-		ActivityID:    entry.ActivityID,
-		ActorType:     entry.ActorType,
-		ActorUserID:   entry.ActorUserID,
-		Action:        entry.Action,
-		ChangeSummary: nullable(entry.ChangeSummary),
-		Detail:        entry.Detail,
+		Scope:            entry.Scope,
+		ActivityID:       entry.ActivityID,
+		ActorType:        entry.ActorType,
+		ActorUserID:      entry.ActorUserID,
+		ActorCandidateID: entry.ActorCandidateID,
+		Action:           entry.Action,
+		ChangeSummary:    nullable(entry.ChangeSummary),
+		Detail:           entry.Detail,
 	}
 	if entry.TargetType != "" {
 		row.TargetType = &entry.TargetType
@@ -164,8 +173,10 @@ func (s *service) RecordStandalone(ctx context.Context, entry Entry) error {
 }
 
 // ListActivity implements the §5.15 OWNER query. The page is read from the repository
-// (scope/action/time pinned there), then actor display names are batch-resolved from the
-// activity-scoped user table — audit_log deliberately stores no denormalized name.
+// (scope/action/time pinned there), then actor display data is batch-resolved: user
+// names from the activity user table, candidate identity (student_id + activity-local
+// name) from candidate ⋈ application — audit_log deliberately stores no denormalized
+// names.
 func (s *service) ListActivity(ctx context.Context, activityID uint64, filter Filter) ([]AuditRow, int64, error) {
 	rows, total, err := s.repo.ListActivityPages(ctx, activityID, filter)
 	if err != nil {
@@ -175,12 +186,25 @@ func (s *service) ListActivity(ctx context.Context, activityID uint64, filter Fi
 	if err != nil {
 		return nil, 0, err
 	}
+	candidates, err := s.candidateActors(ctx, activityID, rows)
+	if err != nil {
+		return nil, 0, err
+	}
 	out := make([]AuditRow, len(rows))
 	for i := range rows {
 		out[i] = AuditRow{AuditLog: rows[i]}
 		if rows[i].ActorUserID != nil {
 			if name, ok := names[*rows[i].ActorUserID]; ok {
 				out[i].ActorName = &name
+			}
+		}
+		if rows[i].ActorCandidateID != nil {
+			out[i].ActorCandidateID = rows[i].ActorCandidateID
+			if info, ok := candidates[*rows[i].ActorCandidateID]; ok {
+				name := info.name
+				studentID := info.studentID
+				out[i].ActorName = &name
+				out[i].ActorStudentID = &studentID
 			}
 		}
 	}
@@ -217,6 +241,52 @@ func (s *service) actorNames(ctx context.Context, rows []model.AuditLog) (map[ui
 		out[u.ID] = u.Name
 	}
 	return out, nil
+}
+
+// candidateActors resolves the display identity (activity-local name + immutable
+// student_id) for one page of CANDIDATE-actor rows in a single query. The LEFT JOIN on
+// application is activity-scoped and at most one row per candidate (uk_application_
+// activity_candidate), so the map is collision-free; candidates without an application
+// row in this activity degrade to student_id only.
+func (s *service) candidateActors(ctx context.Context, activityID uint64, rows []model.AuditLog) (map[uint64]candidateActor, error) {
+	out := make(map[uint64]candidateActor)
+	ids := make([]uint64, 0, len(rows))
+	for i := range rows {
+		if rows[i].ActorType == model.ActorCandidate && rows[i].ActorCandidateID != nil {
+			ids = append(ids, *rows[i].ActorCandidateID)
+		}
+	}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	type row struct {
+		ID        uint64  `gorm:"column:id"`
+		StudentID string  `gorm:"column:student_id"`
+		Name      *string `gorm:"column:name"`
+	}
+	var rowsOut []row
+	if err := s.db.WithContext(ctx).
+		Table("candidate").
+		Select("candidate.id AS id, candidate.student_id AS student_id, application.name AS name").
+		Joins("LEFT JOIN application ON application.candidate_id = candidate.id AND application.activity_id = ?", activityID).
+		Where("candidate.id IN ?", ids).
+		Scan(&rowsOut).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rowsOut {
+		info := candidateActor{studentID: r.StudentID}
+		if r.Name != nil {
+			info.name = *r.Name
+		}
+		out[r.ID] = info
+	}
+	return out, nil
+}
+
+// candidateActor is the read-time display identity of one acting candidate.
+type candidateActor struct {
+	name      string
+	studentID string
 }
 
 func nullable(value string) *string {

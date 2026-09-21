@@ -39,6 +39,7 @@ export function useActivityWorkspace(): ActivityWorkspaceValue {
 /** Offer 模式展示文案 */
 export const OFFER_MODE_LABEL: Record<OfferMode, string> = {
   AUTO: 'AUTO · 自动滚动',
+  BATCH: 'BATCH · 分批发放',
   MANUAL: 'MANUAL · 手动发放',
 }
 

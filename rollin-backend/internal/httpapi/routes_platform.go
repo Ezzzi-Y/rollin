@@ -262,6 +262,7 @@ type platformActivityCreateRequest struct {
 	Description      string `json:"description"`
 	Quota            int    `json:"quota"`
 	OfferMode        string `json:"offerMode"`
+	BatchSize        int    `json:"batchSize"` // BATCH 模式每批人数；0 = 平台默认
 	OfferExpireHours int    `json:"offerExpireHours"`
 }
 
@@ -278,6 +279,7 @@ func (s *Server) platformActivitiesCreate(w http.ResponseWriter, r *http.Request
 		Description:      body.Description,
 		Quota:            body.Quota,
 		OfferMode:        body.OfferMode,
+		BatchSize:        body.BatchSize,
 		OfferExpireHours: body.OfferExpireHours,
 	})
 	if err != nil {

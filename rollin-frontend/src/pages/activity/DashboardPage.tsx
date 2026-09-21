@@ -150,6 +150,9 @@ function DashboardContent() {
           <>
             <ActivityStatusBadge status={info.status} />
             <Badge variant="outline">{OFFER_MODE_LABEL[info.offerMode]}</Badge>
+            {info.offerMode === 'BATCH' ? (
+              <Badge variant="outline">每批 {info.batchSize > 0 ? info.batchSize : '平台默认'}</Badge>
+            ) : null}
             {info.rankingFrozen ? (
               <Badge className="bg-violet-600 text-white">排名已冻结</Badge>
             ) : (

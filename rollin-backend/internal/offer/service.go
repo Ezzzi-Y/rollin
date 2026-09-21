@@ -18,8 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"rollin-backend/internal/audit"
 	"rollin-backend/internal/errs"
 	"rollin-backend/internal/mail"
@@ -27,6 +25,9 @@ import (
 	"rollin-backend/internal/model"
 	"rollin-backend/internal/redisclient"
 	"rollin-backend/internal/smtpconfig"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // IssueResult is the issuing response payload (04 §6.1/§6.3).
@@ -567,16 +568,17 @@ func (s *service) acceptTx(ctx context.Context, tx *gorm.DB, res *resolvedToken,
 	// 6. Main-activity audit (actor CANDIDATE).
 	info := audit.FromContext(ctx)
 	if err := s.audits.Record(tx, audit.Entry{
-		Scope:         model.ScopeActivity,
-		ActivityID:    act.ID,
-		ActorType:     model.ActorCandidate,
-		Action:        audit.ActionOfferAccepted,
-		TargetType:    "OFFER",
-		TargetID:      &offerRow.ID,
-		ChangeSummary: fmt.Sprintf("候选人接受了「%s」的录取通知", act.Title),
-		RequestID:     info.RequestID,
-		IPAddress:     info.IPAddress,
-		UserAgent:     info.UserAgent,
+		Scope:            model.ScopeActivity,
+		ActivityID:       act.ID,
+		ActorType:        model.ActorCandidate,
+		ActorCandidateID: &cand.ID,
+		Action:           audit.ActionOfferAccepted,
+		TargetType:       "OFFER",
+		TargetID:         &offerRow.ID,
+		ChangeSummary:    fmt.Sprintf("候选人接受了「%s」的录取通知", act.Title),
+		RequestID:        info.RequestID,
+		IPAddress:        info.IPAddress,
+		UserAgent:        info.UserAgent,
 	}); err != nil {
 		return err
 	}
@@ -776,17 +778,19 @@ func (s *service) Decline(ctx context.Context, raw string) (PublicView, error) {
 				return errs.Conflict("报名记录状态已变化，请重试")
 			}
 			info := audit.FromContext(ctx)
+			actingCandID := res.CandidateID
 			if err := s.audits.Record(tx, audit.Entry{
-				Scope:         model.ScopeActivity,
-				ActivityID:    act.ID,
-				ActorType:     model.ActorCandidate,
-				Action:        audit.ActionOfferDeclined,
-				TargetType:    "OFFER",
-				TargetID:      &offerRow.ID,
-				ChangeSummary: fmt.Sprintf("候选人主动放弃了「%s」的录取资格", act.Title),
-				RequestID:     info.RequestID,
-				IPAddress:     info.IPAddress,
-				UserAgent:     info.UserAgent,
+				Scope:            model.ScopeActivity,
+				ActivityID:       act.ID,
+				ActorType:        model.ActorCandidate,
+				ActorCandidateID: &actingCandID,
+				Action:           audit.ActionOfferDeclined,
+				TargetType:       "OFFER",
+				TargetID:         &offerRow.ID,
+				ChangeSummary:    fmt.Sprintf("候选人主动放弃了「%s」的录取资格", act.Title),
+				RequestID:        info.RequestID,
+				IPAddress:        info.IPAddress,
+				UserAgent:        info.UserAgent,
 			}); err != nil {
 				return err
 			}

@@ -28,6 +28,7 @@ CREATE TABLE activity (
   status TEXT NOT NULL DEFAULT 'ACTIVE',
   quota INTEGER NOT NULL DEFAULT 1,
   offer_mode TEXT NOT NULL DEFAULT 'AUTO',
+  batch_size INTEGER NOT NULL DEFAULT 0,
   offer_expire_hours INTEGER NOT NULL DEFAULT 72,
   offer_success_message TEXT,
   ranking_dirty BOOLEAN NOT NULL DEFAULT 0,
@@ -90,11 +91,21 @@ CREATE TABLE offer (
   status TEXT NOT NULL DEFAULT 'PENDING',
   active_marker INTEGER,
   source TEXT NOT NULL DEFAULT 'AUTO',
+  batch_id INTEGER,
   reason TEXT,
   created_by_user_id INTEGER,
   expires_at DATETIME NOT NULL,
   sent_at DATETIME, accepted_at DATETIME, declined_at DATETIME, expired_at DATETIME,
   created_at DATETIME, updated_at DATETIME
+);
+CREATE TABLE offer_batch (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  activity_id INTEGER NOT NULL,
+  batch_no INTEGER NOT NULL,
+  issued_count INTEGER NOT NULL DEFAULT 0,
+  created_by_user_id INTEGER,
+  created_at DATETIME,
+  UNIQUE (activity_id, batch_no)
 );
 CREATE TABLE invite_token (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,6 +164,7 @@ CREATE TABLE audit_log (
   activity_id INTEGER NOT NULL DEFAULT 0,
   actor_type TEXT NOT NULL,
   actor_user_id INTEGER,
+  actor_candidate_id INTEGER,
   action TEXT NOT NULL,
   target_type TEXT, target_id INTEGER,
   change_summary TEXT,

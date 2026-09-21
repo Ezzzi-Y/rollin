@@ -162,6 +162,11 @@ function AuditLogsContent() {
                     </TableCell>
                     <TableCell className="text-sm whitespace-nowrap">
                       {log.actorName ?? '—'}
+                      {log.actorStudentId ? (
+                        <span className="ml-1 font-mono text-xs text-muted-foreground">
+                          {log.actorStudentId}
+                        </span>
+                      ) : null}
                       <span className="block text-xs text-muted-foreground">
                         {ACTOR_TYPE_LABEL[log.actorType] ?? log.actorType}
                       </span>

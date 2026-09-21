@@ -66,6 +66,9 @@ import (
 //	POST  /api/activities/{slug}/offers/manual                (§6.1)  [O/A] P5 ✔
 //	POST  /api/activities/{slug}/offers/{offerId}/resend      (§6.2)  [O/A] P5 ✔
 //	POST  /api/activities/{slug}/offers/special               (§6.3)  [O]   P5 ✔
+//	GET   /api/activities/{slug}/offers/batch/preview         (§6.4)  [O/A] 分批发放预览 ✔
+//	POST  /api/activities/{slug}/offers/batch                 (§6.4)  [O/A] 分批发放点击 ✔
+//	GET   /api/activities/{slug}/offer-batches                (§6.4)  [O/A] 批次历史 ✔
 //	GET   /api/activities/{slug}/export/candidates.xlsx       (§9.1)  [O/A] P6 ✔（导出）
 func (s *Server) mountActivity(r chi.Router) {
 	r.Route("/api/activities", func(activities chi.Router) {
@@ -114,13 +117,20 @@ func (s *Server) mountActivity(r chi.Router) {
 				// §9.1 候选人 XLSX 导出（P6，同步生成）
 				ws.With(s.requireMember(policy.OpRead, policy.AnyRole)).
 					Get("/export/candidates.xlsx", s.activityExportCandidates)
-				// §6.1–§6.3 Offer 管理（P5）
+					// §6.1–§6.3 Offer 管理（P5）
 				ws.With(s.requireMember(policy.OpWrite, policy.AnyRole)).
 					Post("/offers/manual", s.offerManualIssue)
 				ws.With(s.requireMember(policy.OpWrite, model.MemberRoleOwner)).
 					Post("/offers/special", s.offerSpecialIssue)
 				ws.With(s.requireMember(policy.OpWrite, policy.AnyRole)).
 					Post("/offers/{offerId}/resend", s.offerResendMail)
+				// §6.4 分批发放（BATCH 模式）：预览 / 点击发放 / 批次历史
+				ws.With(s.requireMember(policy.OpRead, policy.AnyRole)).
+					Get("/offers/batch/preview", s.offerBatchPreview)
+				ws.With(s.requireMember(policy.OpWrite, policy.AnyRole)).
+					Post("/offers/batch", s.offerBatchIssue)
+				ws.With(s.requireMember(policy.OpRead, policy.AnyRole)).
+					Get("/offer-batches", s.offerBatchesList)
 			})
 			s.mountCandidates(slug) // routes_candidates.go — P4 候选人/排名/Import Token（单行挂载，详见该文件）
 		})
@@ -375,6 +385,102 @@ func (s *Server) offerResendMail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"offerId": offerID, "mailQueued": true})
 }
 
+// ---------- §6.4 分批发放（BATCH 模式） ----------
+
+// offerBatchPreview answers "the next click would issue these": GET /offers/batch/preview?limit=N.
+// limit 缺省按活动配置的每批人数（0 = 平台默认）解析。
+func (s *Server) offerBatchPreview(w http.ResponseWriter, r *http.Request) {
+	scope, _ := activityScopeFrom(r.Context())
+	limit := parseIntDefault(r.URL.Query().Get("limit"), 0)
+	preview, err := s.deps.Activity.PreviewBatch(r.Context(), scope.Activity.Slug, limit)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	items := make([]map[string]any, 0, len(preview.Items))
+	for _, item := range preview.Items {
+		row := map[string]any{
+			"applicationId":     item.ApplicationID,
+			"candidateId":       item.CandidateID,
+			"rank":              item.Rank,
+			"name":              item.Name,
+			"studentId":         item.StudentID,
+			"email":             item.Email,
+			"score":             item.Score,
+			"acceptedElsewhere": item.AcceptedElsewhere,
+		}
+		items = append(items, row)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"offerMode":   preview.OfferMode,
+		"batchSize":   preview.BatchSize,
+		"quota":       preview.Quota,
+		"occupied":    preview.Occupied,
+		"maxIssuable": preview.MaxIssuable,
+		"waiting":     preview.Waiting,
+		"nextBatchNo": preview.NextBatchNo,
+		"items":       items,
+	})
+}
+
+type offerBatchRequest struct {
+	// Optional per-click size; 0/absent issues the activity's configured batch size.
+	Limit int `json:"limit"`
+}
+
+// offerBatchIssue implements the §6.4 click: POST /offers/batch {limit?}.
+func (s *Server) offerBatchIssue(w http.ResponseWriter, r *http.Request) {
+	var body offerBatchRequest
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	scope, _ := activityScopeFrom(r.Context())
+	result, err := s.deps.Activity.IssueBatch(r.Context(), scope.Principal.ID, scope.Role,
+		scope.Activity.Slug, body.Limit)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"batchId":   result.BatchID,
+		"batchNo":   result.BatchNo,
+		"issued":    result.Issued,
+		"occupied":  result.Occupied,
+		"quota":     result.Quota,
+		"expiresAt": rfc3339(result.ExpiresAt),
+	})
+}
+
+// offerBatchesList renders the batch history, newest first: GET /offer-batches.
+func (s *Server) offerBatchesList(w http.ResponseWriter, r *http.Request) {
+	scope, _ := activityScopeFrom(r.Context())
+	page := parseIntDefault(r.URL.Query().Get("page"), 1)
+	pageSize := pageSizeBounded(r.URL.Query().Get("pageSize"))
+	rows, total, err := s.deps.Activity.ListOfferBatches(r.Context(), scope.Activity.Slug, page, pageSize)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	items := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, map[string]any{
+			"id":              row.ID,
+			"batchNo":         row.BatchNo,
+			"issuedCount":     row.IssuedCount,
+			"createdByUserId": row.CreatedByUserID,
+			"createdByName":   row.CreatedByName,
+			"createdAt":       rfc3339(row.CreatedAt),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items":    items,
+		"page":     page,
+		"pageSize": pageSize,
+		"total":    total,
+	})
+}
+
 // ---------- §5.1 Dashboard 统计（P6） ----------
 
 // activityDashboard renders the §5.1 aggregation. The activity block comes from the live
@@ -396,6 +502,7 @@ func (s *Server) activityDashboard(w http.ResponseWriter, r *http.Request) {
 			"title":            act.Title,
 			"status":           act.Status,
 			"offerMode":        act.OfferMode,
+			"batchSize":        act.BatchSize,
 			"quota":            act.Quota,
 			"offerExpireHours": act.OfferExpireHours,
 			"rankingDirty":     act.RankingDirty,
@@ -488,20 +595,24 @@ func (s *Server) activityAuditLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// renderAuditItem renders one §5.15 row; nullable columns collapse to null.
+// renderAuditItem renders one §5.15 row; nullable columns collapse to null. Candidate
+// actors carry the resolved identity (activity-local name + student_id) so the OWNER
+// console can show who accepted/declined behind a public token.
 func renderAuditItem(row audit.AuditRow, withDetail bool) map[string]any {
 	item := map[string]any{
-		"id":            row.ID,
-		"actorType":     row.ActorType,
-		"actorUserId":   row.ActorUserID,
-		"actorName":     row.ActorName,
-		"action":        row.Action,
-		"targetType":    row.TargetType,
-		"targetId":      row.TargetID,
-		"changeSummary": row.ChangeSummary,
-		"requestId":     row.RequestID,
-		"ipAddress":     row.IPAddress,
-		"createdAt":     rfc3339(row.CreatedAt),
+		"id":               row.ID,
+		"actorType":        row.ActorType,
+		"actorUserId":      row.ActorUserID,
+		"actorName":        row.ActorName,
+		"actorCandidateId": row.ActorCandidateID,
+		"actorStudentId":   row.ActorStudentID,
+		"action":           row.Action,
+		"targetType":       row.TargetType,
+		"targetId":         row.TargetID,
+		"changeSummary":    row.ChangeSummary,
+		"requestId":        row.RequestID,
+		"ipAddress":        row.IPAddress,
+		"createdAt":        rfc3339(row.CreatedAt),
 	}
 	if withDetail {
 		item["detail"] = row.Detail

@@ -26,8 +26,8 @@ export type ApplicationStatus =
 /** Offer 状态（02 文档 §3.1；终态 ACCEPTED/DECLINED/EXPIRED 永不恢复） */
 export type OfferStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED'
 
-/** Offer 发放来源：AUTO 首发/递补、MANUAL 手动、SPECIAL OWNER 特殊重发 */
-export type OfferSource = 'AUTO' | 'MANUAL' | 'SPECIAL'
+/** Offer 发放来源：AUTO 首发/递补、BATCH 分批、MANUAL 手动、SPECIAL OWNER 特殊重发 */
+export type OfferSource = 'AUTO' | 'BATCH' | 'MANUAL' | 'SPECIAL'
 
 /** MailTask 状态（02 文档 §4.1）；Offer.mailStatus 镜像其关联任务的最新状态 */
 export type MailTaskStatus = 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'CANCELLED'
@@ -49,6 +49,8 @@ export interface DashboardActivity {
   title: string
   status: ActivityStatus
   offerMode: OfferMode
+  /** BATCH 模式默认每批人数；0 = 跟随平台默认 */
+  batchSize: number
   quota: number
   offerExpireHours: number
   rankingDirty: boolean
@@ -515,6 +517,9 @@ export interface AuditLogItem {
   actorType: AuditActorType
   actorUserId: number | null
   actorName: string | null
+  /** 候选人操作者：平台候选人 ID 与学号（仅 actorType=CANDIDATE 时非空） */
+  actorCandidateId: number | null
+  actorStudentId: string | null
   action: string
   targetType: string | null
   targetId: number | null
@@ -669,6 +674,85 @@ export function issueSpecialOffer(
   payload: { applicationId: number; reason: string },
 ): Promise<SpecialIssueResponse> {
   return http.post(`/api/activities/${encodeURIComponent(slug)}/offers/special`, payload)
+}
+
+// ---------- §6.4 分批发放（BATCH 模式） ----------
+
+/** 预览单项：下一批按 rank 将触及的候选人；acceptedElsewhere 标记将被跳过者 */
+export interface BatchPreviewItem {
+  applicationId: number
+  candidateId: number
+  rank: number | null
+  name: string
+  studentId: string
+  email: string
+  score: number
+  acceptedElsewhere: boolean
+}
+
+/** GET /offers/batch/preview 响应：默认批大小、剩余可发额度与下一批名单 */
+export interface BatchPreviewResponse {
+  offerMode: OfferMode
+  /** 生效的默认每批人数（活动值，缺省继承平台 defaultBatchSize） */
+  batchSize: number
+  quota: number
+  occupied: number
+  /** quota - occupied，本批人数的硬上限 */
+  maxIssuable: number
+  waiting: number
+  nextBatchNo: number
+  items: BatchPreviewItem[]
+}
+
+/**
+ * 分批发放预览（GET /api/activities/{slug}/offers/batch/preview?limit=N）[O/A]。
+ * limit 缺省（0）按活动配置解析默认批大小；只读，无副作用。
+ */
+export function getBatchPreview(slug: string, limit?: number): Promise<BatchPreviewResponse> {
+  return http.get(`/api/activities/${encodeURIComponent(slug)}/offers/batch/preview`, {
+    query: { limit: limit && limit > 0 ? limit : undefined },
+  })
+}
+
+/** POST /offers/batch 响应：本次点击的批次结果 */
+export interface IssueBatchResponse {
+  batchId: number
+  batchNo: number
+  issued: number
+  occupied: number
+  quota: number
+  expiresAt: string
+}
+
+/**
+ * 分批发放（POST /api/activities/{slug}/offers/batch {limit?}）[O/A]。
+ * 按 rank 顺序发放一批（默认取活动批大小），受剩余名额封顶；
+ * 已接受其他活动的候选人自动跳过并标记失格。空位不自动递补，由下一次点击消化。
+ */
+export function issueOfferBatch(slug: string, limit?: number): Promise<IssueBatchResponse> {
+  return http.post(`/api/activities/${encodeURIComponent(slug)}/offers/batch`, {
+    ...(limit && limit > 0 ? { limit } : {}),
+  })
+}
+
+/** 批次历史单项（"第 N 批，发放 M 人，操作人、时间"） */
+export interface OfferBatchItem {
+  id: number
+  batchNo: number
+  issuedCount: number
+  createdByUserId: number | null
+  createdByName: string | null
+  createdAt: string
+}
+
+/** 批次历史（GET /api/activities/{slug}/offer-batches）[O/A]，batch_no 倒序 */
+export function listOfferBatches(
+  slug: string,
+  params: { page?: number; pageSize?: number } = {},
+): Promise<Paged<OfferBatchItem>> {
+  return http.get(`/api/activities/${encodeURIComponent(slug)}/offer-batches`, {
+    query: { page: params.page, pageSize: params.pageSize },
+  })
 }
 
 // ---------- §9.1 导出 ----------

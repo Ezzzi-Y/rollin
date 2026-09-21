@@ -50,6 +50,13 @@ const schema = z.object({
     .min(1, '请输入录取名额')
     .refine((value) => /^\d+$/.test(value) && Number(value) >= 1, '录取名额必须为大于 0 的整数'),
   offerMode: z.string(),
+  batchSize: z
+    .string()
+    .refine(
+      (value) =>
+        value === '' || (/^\d+$/.test(value) && Number(value) >= 1 && Number(value) <= 1000),
+      '每批发放人数需为 1–1000 的整数',
+    ),
   offerExpireHours: z
     .string()
     .refine(
@@ -77,6 +84,7 @@ export function CreateActivityDialog({ open, onOpenChange }: CreateActivityDialo
       description: '',
       quota: '',
       offerMode: OFFER_MODE_DEFAULT,
+      batchSize: '',
       offerExpireHours: '',
     },
   })
@@ -88,6 +96,9 @@ export function CreateActivityDialog({ open, onOpenChange }: CreateActivityDialo
     }
   }, [open, form])
 
+  const watchOfferMode = form.watch('offerMode')
+  const isBatch = watchOfferMode === 'BATCH'
+
   const mutation = useMutation({
     mutationFn: (values: ResolvedValues) =>
       createActivity({
@@ -97,6 +108,9 @@ export function CreateActivityDialog({ open, onOpenChange }: CreateActivityDialo
         quota: Number(values.quota),
         ...(values.offerMode !== OFFER_MODE_DEFAULT
           ? { offerMode: values.offerMode as OfferMode }
+          : {}),
+        ...(values.offerMode === 'BATCH' && values.batchSize
+          ? { batchSize: Number(values.batchSize) }
           : {}),
         ...(values.offerExpireHours ? { offerExpireHours: Number(values.offerExpireHours) } : {}),
       }),
@@ -226,6 +240,7 @@ export function CreateActivityDialog({ open, onOpenChange }: CreateActivityDialo
                   <SelectContent>
                     <SelectItem value={OFFER_MODE_DEFAULT}>跟随平台默认参数</SelectItem>
                     <SelectItem value="AUTO">AUTO：按排名自动发放与递补</SelectItem>
+                    <SelectItem value="BATCH">BATCH：按排名分批发放，点击一次发一批</SelectItem>
                     <SelectItem value="MANUAL">MANUAL：手动发放 Offer</SelectItem>
                   </SelectContent>
                 </Select>
@@ -233,6 +248,28 @@ export function CreateActivityDialog({ open, onOpenChange }: CreateActivityDialo
             />
             <p className="text-xs text-muted-foreground">录取启动前负责人仍可修改模式</p>
           </div>
+
+          {isBatch ? (
+            <div className="space-y-2">
+              <Label htmlFor="create-activity-batch-size">每批发放人数</Label>
+              <Input
+                id="create-activity-batch-size"
+                type="number"
+                min={1}
+                max={1000}
+                placeholder="默认取平台参数（20）"
+                aria-invalid={Boolean(form.formState.errors.batchSize)}
+                {...form.register('batchSize')}
+              />
+              {form.formState.errors.batchSize ? (
+                <p className="text-xs text-destructive">{form.formState.errors.batchSize.message}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  每次点击「发放下一批」的默认人数（1–1000），发放前仍可临时调整；空出的名额不会自动递补。
+                </p>
+              )}
+            </div>
+          ) : null}
 
           {form.formState.errors.root ? (
             <p role="alert" className="text-sm text-destructive">

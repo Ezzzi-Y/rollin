@@ -39,7 +39,8 @@ func newMailTestDB(t *testing.T) *gorm.DB {
 CREATE TABLE activity (
   id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
   description TEXT, status TEXT NOT NULL DEFAULT 'ACTIVE', quota INTEGER NOT NULL DEFAULT 1,
-  offer_mode TEXT NOT NULL DEFAULT 'AUTO', offer_expire_hours INTEGER NOT NULL DEFAULT 72,
+  offer_mode TEXT NOT NULL DEFAULT 'AUTO', batch_size INTEGER NOT NULL DEFAULT 0,
+  offer_expire_hours INTEGER NOT NULL DEFAULT 72,
   offer_success_message TEXT, ranking_dirty BOOLEAN NOT NULL DEFAULT 0,
   ranking_frozen BOOLEAN NOT NULL DEFAULT 0, started_at DATETIME,
   refill_paused BOOLEAN NOT NULL DEFAULT 0, created_at DATETIME, updated_at DATETIME
@@ -57,7 +58,7 @@ CREATE TABLE application (
 );
 CREATE TABLE offer (
   id INTEGER PRIMARY KEY AUTOINCREMENT, application_id INTEGER NOT NULL,
-  status TEXT NOT NULL DEFAULT 'PENDING', source TEXT NOT NULL DEFAULT 'AUTO', reason TEXT,
+  status TEXT NOT NULL DEFAULT 'PENDING', source TEXT NOT NULL DEFAULT 'AUTO', batch_id INTEGER, reason TEXT,
   created_by_user_id INTEGER, expires_at DATETIME NOT NULL,
   sent_at DATETIME, accepted_at DATETIME, declined_at DATETIME, expired_at DATETIME,
   created_at DATETIME, updated_at DATETIME
@@ -103,7 +104,7 @@ CREATE TABLE offer_token (
 );
 CREATE TABLE audit_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT, scope TEXT NOT NULL, activity_id INTEGER NOT NULL DEFAULT 0,
-  actor_type TEXT NOT NULL, actor_user_id INTEGER, action TEXT NOT NULL,
+  actor_type TEXT NOT NULL, actor_user_id INTEGER, actor_candidate_id INTEGER, action TEXT NOT NULL,
   target_type TEXT, target_id INTEGER, change_summary TEXT, detail JSON,
   request_id TEXT, ip_address TEXT, user_agent TEXT, created_at DATETIME
 );

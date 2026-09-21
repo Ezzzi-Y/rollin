@@ -46,6 +46,7 @@ const STATUS_META: Record<ActivityStatus, { label: string; className: string }> 
 
 const OFFER_MODE_LABEL: Record<PlatformActivity['offerMode'], string> = {
   AUTO: 'AUTO · 自动',
+  BATCH: 'BATCH · 分批',
   MANUAL: 'MANUAL · 手动',
 }
 

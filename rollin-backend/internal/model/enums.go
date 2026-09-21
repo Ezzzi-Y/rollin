@@ -16,9 +16,12 @@ const (
 )
 
 // Offer issuing mode. Locked once the admission has formally started (MODE_LOCKED).
+// BATCH（分批发放）是"系统定顺序、管理员定节奏"的第三种形态：每次手动触发按 rank
+// 发放一批，空出的名额永不自动递补。
 const (
 	OfferModeAuto   = "AUTO"
 	OfferModeManual = "MANUAL"
+	OfferModeBatch  = "BATCH"
 )
 
 // Activity-scoped staff account status. INVITED accounts hold an empty password hash;
@@ -67,6 +70,7 @@ const (
 	OfferSourceAuto    = "AUTO"
 	OfferSourceManual  = "MANUAL"
 	OfferSourceSpecial = "SPECIAL"
+	OfferSourceBatch   = "BATCH"
 )
 
 // ImportToken lifecycle. EXPIRED is decided lazily by comparing expires_at (02 §5).

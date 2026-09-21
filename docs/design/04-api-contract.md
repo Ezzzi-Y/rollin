@@ -53,7 +53,7 @@
 | `OFFER_NOT_ACTIONABLE` | 409 | Offer 非可操作状态（已处理/终态） |
 | `RANKING_DIRTY` | 422 | 排名待重算，禁止启动录取 |
 | `OFFER_EXPIRED` | 410 | Offer 已过截止时间 |
-| `MODE_LOCKED` | 409 | 模式约束（AUTO 下手动挑人 / 启动后切模式） |
+| `MODE_LOCKED` | 409 | 模式约束（AUTO/BATCH 下手动挑人 / 非 BATCH 下按批发放 / 启动后切模式） |
 | `SMTP_NOT_CONFIGURED` | 409 | 依赖发信的业务但 SMTP 未配置或未验证 |
 | `RATE_LIMITED` | 429 | 登录/Token 限流 |
 | `EXPORT_TOO_LARGE` | 413 | 导出行数超过 50000 上限 |
@@ -193,7 +193,7 @@ POST /api/platform/activities
 { "title": "技术部招新", "slug": "tech-2026", "description": "2026 秋季招新", "quota": 20, "offerMode": "AUTO", "offerExpireHours": 72 }
 ```
 - `slug` 可选；未提供自动生成 `act-<8位随机小写字母数字>`；提供时校验 `^[a-z0-9]+(-[a-z0-9]+)*$`、3–64 字符、全局唯一（`SLUG_TAKEN`）。
-- `title` 必填 ≤100；`quota` 必填 ≥1；`offerMode` ∈ `AUTO|MANUAL`（缺省取平台默认参数）；`offerExpireHours` 1–720（缺省 72）。
+- `title` 必填 ≤100；`quota` 必填 ≥1；`offerMode` ∈ `AUTO|BATCH|MANUAL`（缺省取平台默认参数）；`batchSize` 仅 BATCH 模式有意义，1–1000（缺省取平台 `defaultBatchSize`）；`offerExpireHours` 1–720（缺省 72）。
 - 创建时**可不指定负责人**（执行计划 3.1.2），负责人之后单独邀请；活动初始 `status=ACTIVE`。
 响应 `201`：
 ```json
@@ -422,7 +422,7 @@ POST /api/activities/{slug}/admission/start
 5. 排名完整且 `ranking_dirty=0` → 否则 `RANKING_DIRTY`（422）；
 6. `ranking_frozen=0`（重复启动幂等：已冻结且 `started_at` 非空 → 直接返回当前状态，不重复首发）。
 
-写入：`ranking_frozen=1`、`started_at=now`（仅首次）；AUTO 模式立即按 `rank ASC` 向前 `quota` 个合格 WAITING 创建 Offer + MailTask（首发循环）；MANUAL 模式仅冻结，不发放。
+写入：`ranking_frozen=1`、`started_at=now`（仅首次）；AUTO 模式立即按 `rank ASC` 向前 `quota` 个合格 WAITING 创建 Offer + MailTask（首发循环）；MANUAL 与 BATCH 模式仅冻结，不发放——BATCH 的发放由 §6.4 的每次点击驱动。
 响应 `200`：
 ```json
 { "rankingFrozen": true, "startedAt": "2026-09-10T09:00:00Z", "offersIssued": 20, "offerMode": "AUTO" }
@@ -445,7 +445,7 @@ PATCH /api/activities/{slug}/settings/quota
 ```
 PATCH /api/activities/{slug}/settings/offer-mode
 ```
-权限 `[O]`。请求：`{ "offerMode": "MANUAL" }`。
+权限 `[O]`。请求：`{ "offerMode": "BATCH" }`（`AUTO|BATCH|MANUAL` 皆可）。
 约束：`started_at IS NOT NULL` 或 `ranking_frozen=1` → `MODE_LOCKED`（88.7.5）。
 响应 `200`：`{ "offerMode": "MANUAL" }`。审计 `ACTIVITY_MODE_UPDATED`。
 
@@ -634,7 +634,46 @@ POST /api/activities/{slug}/offers/special
 ```
 审计 `OFFER_SPECIAL_ISSUED`（detail 含 reason、previousOfferId）。
 
-### 6.4 失败邮件重排队
+### 6.4 分批发放（BATCH 模式，V4）
+
+三种模式的发放节奏：AUTO 系统自动（启动即发满、空位自动递补）；BATCH **系统定顺序、管理员定节奏**——每次点击按 rank 发一批，空位永不自动递补，只并入下一次点击的可发额度；MANUAL 人工逐个挑选。模式一旦启动锁定（`MODE_LOCKED`）。
+
+```
+GET /api/activities/{slug}/offers/batch/preview?limit=N
+```
+权限 `[O]/[A]`，只读。`limit` 缺省（0）按活动 `batch_size` 解析（0 再回退平台 `defaultBatchSize`）。
+前置：活动 ACTIVE；`ranking_frozen=1`（→ `CONFLICT`）；`offerMode='BATCH'`（→ `MODE_LOCKED`）；`limit` 1–1000（→ `VALIDATION_ERROR`）。
+响应 `200`：
+```json
+{
+  "offerMode": "BATCH", "batchSize": 20, "quota": 50, "occupied": 30, "maxIssuable": 20,
+  "waiting": 45, "nextBatchNo": 3,
+  "items": [ { "applicationId": 104, "candidateId": 31, "rank": 21, "name": "张三", "studentId": "20211234", "email": "zhang@example.edu.cn", "score": 88, "acceptedElsewhere": false } ]
+}
+```
+`items` 为按 `rank ASC` 的本批预览名单（≤ limit）；`acceptedElsewhere=true` 标记发放循环将跳过并标记失格者（不占名额、不占本批人数）。
+
+```
+POST /api/activities/{slug}/offers/batch
+```
+权限 `[O]/[A]`。请求：`{ "limit": 20 }`（可选；缺省按活动配置解析）。
+前置（活动锁内复查）：活动 ACTIVE；`ranking_frozen=1`；`offerMode='BATCH'`（→ `MODE_LOCKED`）；SMTP 有效（→ `SMTP_NOT_CONFIGURED`）；`occupied < quota`（→ `QUOTA_EXCEEDED`）；`limit` 1–1000。
+行为：同事务创建 `offer_batch` 行（`batch_no = MAX+1`）→ 按 `rank ASC` 发放至多 `limit` 个 Offer（`source='BATCH'`、`batch_id` 落库、`created_by_user_id` 归因；跳过并标记 INELIGIBLE 已接受其他活动者，跳过不占 limit）→ Application WAITING→OFFERED → MailTask 入队；实发 0 则不落批次行。空出的名额（放弃/超时/联动/扩容）**不触发任何自动行为**。
+响应 `200`：
+```json
+{ "batchId": 3, "batchNo": 3, "issued": 20, "occupied": 50, "quota": 50, "expiresAt": "2026-09-24T12:00:00Z" }
+```
+审计：每个 Offer 一条 `OFFER_ISSUED_BATCH`（actor=触发用户，detail 含 batchId）+ 一条批次汇总 `OFFER_BATCH_ISSUED`（target=OFFER_BATCH #batchId）。
+
+```
+GET /api/activities/{slug}/offer-batches?page=1&pageSize=20
+```
+权限 `[O]/[A]`。批次历史（`batch_no` 倒序）：
+```json
+{ "items": [ { "id": 3, "batchNo": 3, "issuedCount": 20, "createdByUserId": 7, "createdByName": "李负责", "createdAt": "2026-09-20T10:00:00Z" } ], "page": 1, "pageSize": 20, "total": 3 }
+```
+
+### 6.5 失败邮件重排队
 
 见 5.16 retry（ADMIN 可用；「重排队」与 6.2「重发」的区别：前者针对 FAILED 任务，后者针对 PENDING Offer 补发邮件）。
 

@@ -52,7 +52,11 @@ function QuotaCard() {
       toast.success(`quota 已调整为 ${result.quota}`, {
         description:
           result.quota > (stats?.quota ?? result.quota)
-            ? 'AUTO 活动增加容量后将按 rank 自动补齐空额（递补暂停时保留意图，恢复递补后执行）。'
+            ? ws.info?.offerMode === 'AUTO'
+              ? 'AUTO 活动增加容量后将按 rank 自动补齐空额（递补暂停时保留意图，恢复递补后执行）。'
+              : ws.info?.offerMode === 'BATCH'
+                ? '增加容量后不会自动发放；请在「Offer」页点击「发放下一批」消化新增名额。'
+                : undefined
             : undefined,
       })
       setInput('')
@@ -160,12 +164,12 @@ function OfferModeCard() {
         <CardDescription>
           {started
             ? '正式录取已启动，模式不可再修改（契约 MODE_LOCKED）。'
-            : 'AUTO：启动后按 rank 自动首发与滚动递补；MANUAL：启动后由人工挑选候选人发放，不自动补位。启动后锁定。'}
+            : 'AUTO：启动后按 rank 自动首发与滚动递补；BATCH：启动后由人工点击按 rank 整批发放，空位不自动递补；MANUAL：启动后由人工挑选候选人发放，不自动补位。启动后锁定。'}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="sm:w-56">
+          <div className="sm:w-72">
             <Select
               value={info.offerMode}
               disabled={started || ws.readOnly || mutation.isPending}
@@ -176,6 +180,7 @@ function OfferModeCard() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="AUTO">{OFFER_MODE_LABEL.AUTO}</SelectItem>
+                <SelectItem value="BATCH">{OFFER_MODE_LABEL.BATCH}</SelectItem>
                 <SelectItem value="MANUAL">{OFFER_MODE_LABEL.MANUAL}</SelectItem>
               </SelectContent>
             </Select>

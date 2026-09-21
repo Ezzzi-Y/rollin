@@ -26,6 +26,7 @@ const (
 	KeyPublicBaseURL      = "publicBaseUrl"
 	KeyDefaultOfferMode   = "defaultOfferMode"
 	KeyDefaultOfferExpire = "defaultOfferExpireHours"
+	KeyDefaultBatchSize   = "defaultBatchSize"
 	KeyInviteExpireHours  = "inviteExpireHours"
 	KeySessionHours       = "sessionHours"
 )
@@ -58,8 +59,9 @@ var definitions = []Definition{
 	{Key: KeySiteName, Label: "平台名称", Kind: KindText, Default: "Rollin", Description: "显示在登录页、管理后台标题和邀请邮件中的名称。"},
 	{Key: KeyAdminBaseURL, Label: "管理后台地址", Kind: KindURL, Default: "", Description: "用于生成账号邀请链接，必须是对外可访问的管理端域名。"},
 	{Key: KeyPublicBaseURL, Label: "候选人访问地址", Kind: KindURL, Default: "", Description: "用于生成候选人 Offer 链接，必须是候选人可访问的域名（t.xxx.xxx）。"},
-	{Key: KeyDefaultOfferMode, Label: "默认发放模式", Kind: KindEnum, Default: "AUTO", Options: []string{"AUTO", "MANUAL"}, Description: "创建招新活动时的默认发放方式：AUTO 自动递补，MANUAL 逐个确认。"},
+	{Key: KeyDefaultOfferMode, Label: "默认发放模式", Kind: KindEnum, Default: "AUTO", Options: []string{"AUTO", "MANUAL", "BATCH"}, Description: "创建招新活动时的默认发放方式：AUTO 自动递补，BATCH 分批发放，MANUAL 逐个确认。"},
 	{Key: KeyDefaultOfferExpire, Label: "默认 Offer 有效期", Kind: KindInt, Default: "72", Unit: "小时", Min: 1, Max: 720, Description: "创建招新活动时候选人确认录取的默认时限。"},
+	{Key: KeyDefaultBatchSize, Label: "默认每批发放人数", Kind: KindInt, Default: "20", Unit: "人", Min: 1, Max: 1000, Description: "BATCH 分批发放活动的默认每批人数；创建活动时可覆盖，发放前仍可临时调整。"},
 	{Key: KeyInviteExpireHours, Label: "邀请链接有效期", Kind: KindInt, Default: "72", Unit: "小时", Min: 1, Max: 720, Description: "邀请邮件中的链接在多长时间内有效，超时后可重新发送。"},
 	{Key: KeySessionHours, Label: "登录会话有效期", Kind: KindInt, Default: "24", Unit: "小时", Min: 1, Max: 720, Description: "登录状态的最长保持时间，修改后对新登录生效。"},
 }

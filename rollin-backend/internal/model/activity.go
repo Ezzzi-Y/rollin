@@ -6,13 +6,17 @@ import "time"
 // identifier used by every management route; the ranking_* / started_at / refill_paused
 // flags carry the admission lifecycle orthogonally to status.
 type Activity struct {
-	ID                  uint64     `gorm:"primaryKey"`
-	Slug                string     `gorm:"column:slug;type:varchar(64);not null;uniqueIndex:uk_activity_slug"`
-	Title               string     `gorm:"type:varchar(100);not null"`
-	Description         *string    `gorm:"type:varchar(500)"`
-	Status              string     `gorm:"type:enum('ACTIVE','DISABLED','ARCHIVED');not null;default:'ACTIVE'"`
-	Quota               int        `gorm:"not null"`
-	OfferMode           string     `gorm:"column:offer_mode;type:enum('AUTO','MANUAL');not null;default:'AUTO'"`
+	ID          uint64  `gorm:"primaryKey"`
+	Slug        string  `gorm:"column:slug;type:varchar(64);not null;uniqueIndex:uk_activity_slug"`
+	Title       string  `gorm:"type:varchar(100);not null"`
+	Description *string `gorm:"type:varchar(500)"`
+	Status      string  `gorm:"type:enum('ACTIVE','DISABLED','ARCHIVED');not null;default:'ACTIVE'"`
+	Quota       int     `gorm:"not null"`
+	OfferMode   string  `gorm:"column:offer_mode;type:enum('AUTO','MANUAL','BATCH');not null;default:'AUTO'"`
+	// BatchSize is the BATCH-mode default issuance size ("每批人数"). 0 means "inherit
+	// the platform default (defaultBatchSize)" — activities created before BATCH existed
+	// or created with an empty input resolve it at read time.
+	BatchSize           int        `gorm:"column:batch_size;not null;default:0"`
 	OfferExpireHours    int        `gorm:"column:offer_expire_hours;not null;default:72"`
 	OfferSuccessMessage *string    `gorm:"column:offer_success_message;type:varchar(500)"`
 	RankingDirty        bool       `gorm:"column:ranking_dirty;not null;default:false"`

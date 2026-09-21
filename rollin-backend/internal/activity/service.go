@@ -114,10 +114,20 @@ type Service interface {
 	// clears). actorRole selects the audit actor type (OWNER/ADMIN). P5.
 	UpdateSuccessMessage(ctx context.Context, actorID uint64, actorRole, slug, message string) error
 	// StartAdmission freezes ranking permanently, writes started_at and runs the AUTO
-	// first-issue loop (04 §5.7). P5 (with ranking + offer collaborators).
+	// first-issue loop (04 §5.7). P5 (with ranking + offer collaborators). MANUAL and
+	// BATCH only freeze — BATCH issues through IssueBatch clicks instead.
 	StartAdmission(ctx context.Context, ownerUserID uint64, slug string) (StartResult, error)
 	// ResumeRefill clears refill_paused and refills by rank (D4). P5.
 	ResumeRefill(ctx context.Context, ownerUserID uint64, slug string) (ResumeRefillResult, error)
+	// IssueBatch issues one BATCH-mode batch: top-`limit` WAITING applications by rank,
+	// capped by the remaining quota, all offers linked to a new offer_batch record.
+	// limit 0 resolves the activity's batch size (falling back to the platform default).
+	IssueBatch(ctx context.Context, actorID uint64, actorRole, slug string, limit int) (BatchIssueResult, error)
+	// PreviewBatch is the read-only companion of IssueBatch: who the next batch would
+	// reach, the effective batch size and the remaining issuable headroom.
+	PreviewBatch(ctx context.Context, slug string, limit int) (BatchPreview, error)
+	// ListOfferBatches returns the batch history of one BATCH activity, newest first.
+	ListOfferBatches(ctx context.Context, slug string, page, pageSize int) ([]OfferBatchItem, int64, error)
 }
 
 // CreateInput is the validated platform request payload.
@@ -126,7 +136,8 @@ type CreateInput struct {
 	Slug             string // optional; auto-generated when empty
 	Description      string
 	Quota            int
-	OfferMode        string // AUTO|MANUAL; platform default when empty
+	OfferMode        string // AUTO|MANUAL|BATCH; platform default when empty
+	BatchSize        int    // BATCH-mode per-click issuance size; 0 = platform default
 	OfferExpireHours int    // 1..720; platform default when 0
 }
 
@@ -187,8 +198,25 @@ func (s *service) Create(ctx context.Context, actorID uint64, in CreateInput) (*
 	if mode == "" {
 		mode = s.deps.Settings.Get(ctx, settings.KeyDefaultOfferMode)
 	}
-	if mode != model.OfferModeAuto && mode != model.OfferModeManual {
-		return nil, errs.Validation("发放模式只能是 AUTO 或 MANUAL")
+	if mode != model.OfferModeAuto && mode != model.OfferModeManual && mode != model.OfferModeBatch {
+		return nil, errs.Validation("发放模式只能是 AUTO、BATCH 或 MANUAL")
+	}
+	// BATCH batch size: a provided value is validated as-is for any mode (an AUTO
+	// activity may switch to BATCH before start); a BATCH creation without one inherits
+	// the platform default at creation so the activity record shows the effective value.
+	batchSize := in.BatchSize
+	if batchSize < 0 || batchSize > 1000 {
+		return nil, errs.Validation("每批发放人数必须为 1–1000")
+	}
+	if batchSize > 0 {
+		if err := validate.ValidateBatchSize(batchSize); err != nil {
+			return nil, errs.Validation(err.Error())
+		}
+	} else if mode == model.OfferModeBatch {
+		batchSize = s.deps.Settings.Int(ctx, settings.KeyDefaultBatchSize)
+		if err := validate.ValidateBatchSize(batchSize); err != nil {
+			return nil, errs.Validation("平台默认每批人数配置非法：" + err.Error())
+		}
 	}
 	expireHours := in.OfferExpireHours
 	if expireHours == 0 {
@@ -220,6 +248,7 @@ func (s *service) Create(ctx context.Context, actorID uint64, in CreateInput) (*
 				Title:            title,
 				Status:           model.ActivityActive,
 				OfferMode:        mode,
+				BatchSize:        batchSize,
 				OfferExpireHours: expireHours,
 			}
 			if description != "" {
@@ -659,8 +688,8 @@ func lifecycleGate(status string) error {
 }
 
 func (s *service) UpdateOfferMode(ctx context.Context, actorID uint64, slug string, mode string) error {
-	if mode != model.OfferModeAuto && mode != model.OfferModeManual {
-		return errs.Validation("发放模式只能是 AUTO 或 MANUAL")
+	if mode != model.OfferModeAuto && mode != model.OfferModeManual && mode != model.OfferModeBatch {
+		return errs.Validation("发放模式只能是 AUTO、BATCH 或 MANUAL")
 	}
 	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		act, err := s.repo.FindBySlugForUpdate(ctx, tx, slug)

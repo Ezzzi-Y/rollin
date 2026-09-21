@@ -46,11 +46,14 @@ func (Application) TableName() string { return "application" }
 // states) and the unique key uk_application_active_offer. The legacy token_hash /
 // token_ciphertext / is_current columns are gone: tokens live in offer_token.
 type Offer struct {
-	ID              uint64     `gorm:"primaryKey"`
-	ApplicationID   uint64     `gorm:"column:application_id;not null;uniqueIndex:uk_application_active_offer,priority:1;index:idx_offer_application,priority:1"`
-	Status          string     `gorm:"type:enum('PENDING','ACCEPTED','DECLINED','EXPIRED');not null;default:'PENDING';uniqueIndex:uk_application_active_offer,priority:2;index:idx_offer_expiry_scan,priority:1;index:idx_offer_application,priority:2"`
-	ActiveMarker    *int64     `gorm:"column:active_marker;->;type:bigint"` // GENERATED ALWAYS AS (CASE WHEN status IN ('PENDING','ACCEPTED') THEN 1 ELSE NULL END) STORED
-	Source          string     `gorm:"type:enum('AUTO','MANUAL','SPECIAL');not null;default:'AUTO'"`
+	ID            uint64 `gorm:"primaryKey"`
+	ApplicationID uint64 `gorm:"column:application_id;not null;uniqueIndex:uk_application_active_offer,priority:1;index:idx_offer_application,priority:1"`
+	Status        string `gorm:"type:enum('PENDING','ACCEPTED','DECLINED','EXPIRED');not null;default:'PENDING';uniqueIndex:uk_application_active_offer,priority:2;index:idx_offer_expiry_scan,priority:1;index:idx_offer_application,priority:2"`
+	ActiveMarker  *int64 `gorm:"column:active_marker;->;type:bigint"` // GENERATED ALWAYS AS (CASE WHEN status IN ('PENDING','ACCEPTED') THEN 1 ELSE NULL END) STORED
+	Source        string `gorm:"type:enum('AUTO','MANUAL','SPECIAL','BATCH');not null;default:'AUTO'"`
+	// BatchID links a BATCH-source offer to its offer_batch row (NULL for the other
+	// sources). The batch history view counts offers per batch through it.
+	BatchID         *uint64    `gorm:"column:batch_id;index:idx_offer_batch"`
 	Reason          *string    `gorm:"type:varchar(500)"`
 	CreatedByUserID *uint64    `gorm:"column:created_by_user_id"`
 	ExpiresAt       time.Time  `gorm:"column:expires_at;not null;index:idx_offer_expiry_scan,priority:2"`

@@ -17,7 +17,8 @@
 | description | VARCHAR(500) | 是 | NULL | |
 | status | ENUM('ACTIVE','DISABLED','ARCHIVED') | 否 | 'ACTIVE' | 02 文档 §1 |
 | quota | INT | 否 | — | CHECK (`quota >= 1`)（88.7.1 不允许为 0） |
-| offer_mode | ENUM('AUTO','MANUAL') | 否 | 'AUTO' | 启动后不可改（应用层 `MODE_LOCKED`） |
+| offer_mode | ENUM('AUTO','MANUAL','BATCH') | 否 | 'AUTO' | 启动后不可改（应用层 `MODE_LOCKED`）；BATCH 为分批发放（V4） |
+| batch_size | INT | 否 | 0 | BATCH 模式默认每批人数（1–1000，CHECK `batch_size BETWEEN 0 AND 10000`）；0=继承平台 defaultBatchSize（V4） |
 | offer_expire_hours | INT | 否 | 72 | CHECK (`offer_expire_hours BETWEEN 1 AND 720`) |
 | offer_success_message | VARCHAR(500) | 是 | NULL | Offer 接受成功提示 |
 | ranking_dirty | TINYINT(1) | 否 | 0 | 1=待重算；置位时禁止启动 |
@@ -136,7 +137,8 @@
 | application_id | BIGINT UNSIGNED | 否 | — | FK → application.id；一对多历史 Offer |
 | status | ENUM('PENDING','ACCEPTED','DECLINED','EXPIRED') | 否 | 'PENDING' | 02 文档 §3 |
 | active_marker | BIGINT | — | — | **生成列** `GENERATED ALWAYS AS (CASE WHEN status IN ('PENDING','ACCEPTED') THEN 1 ELSE NULL END) STORED` |
-| source | ENUM('AUTO','MANUAL','SPECIAL') | 否 | 'AUTO' | 发放来源；SPECIAL 携带 reason |
+| source | ENUM('AUTO','MANUAL','SPECIAL','BATCH') | 否 | 'AUTO' | 发放来源；SPECIAL 携带 reason；BATCH 为分批发放（V4） |
+| batch_id | BIGINT UNSIGNED | 是 | NULL | FK → offer_batch.id；仅 BATCH 来源非空（V4） |
 | reason | VARCHAR(500) | 是 | NULL | SPECIAL 必填（应用层校验） |
 | created_by_user_id | BIGINT UNSIGNED | 是 | NULL | SYSTEM 发放为 NULL |
 | expires_at | DATETIME | 否 | — | 创建时 `now + activity.offer_expire_hours`；重发不重算（88.6.4） |
@@ -338,6 +340,21 @@ UPDATE application SET rank = 11   WHERE id = 101;
 索引：`idx_refill_intent_pending (status, activity_id)`。
 
 执行语义：后台执行器按活动分组取 PENDING 意图 → 对每个活动取活动锁 → 复查 ACTIVE 与 `refill_paused`（暂停则保留意图直接返回）→ 执行 `fillByRank`（幂等：occupied 复查，永不超 quota、不重复发 Offer）→ 意图置 DONE。同一活动同一时刻多意图执行效果等价于一次补齐（幂等，A11/A16）。
+
+---
+
+## 16A. offer_batch（BATCH 批次记录，V4）
+
+"第 N 批，发放 M 人，操作人、时间"作为一等记录：分批发放（`offer_mode='BATCH'`）每次点击在同一事务内创建一行，批次内的 Offer 通过 `offer.batch_id` 回链。实发 0 个的点击不落行（空批次不存在）。
+
+| 列 | 类型 | 可空 | 默认 | 约束 / 说明 |
+| --- | --- | --- | --- | --- |
+| id | BIGINT UNSIGNED | 否 | 自增 | PK |
+| activity_id | BIGINT UNSIGNED | 否 | — | FK → activity.id |
+| batch_no | INT UNSIGNED | 否 | — | 活动内从 1 连续递增；`UNIQUE uk_offer_batch_activity_no (activity_id, batch_no)`（活动锁内 `MAX+1`） |
+| issued_count | INT UNSIGNED | 否 | 0 | 本批实际发放数（≤ 请求 limit、剩余名额与候补人数） |
+| created_by_user_id | BIGINT UNSIGNED | 是 | NULL | 触发点击的 OWNER/ADMIN |
+| created_at | DATETIME | 否 | 见头部 | |
 
 ---
 

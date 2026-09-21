@@ -96,6 +96,16 @@ func ValidateOfferExpireHours(value int) error {
 	return nil
 }
 
+// ValidateBatchSize enforces the BATCH-mode per-click issuance size: 1..1000, matching
+// the activity.batch_size CHECK (0 = "inherit the platform default" and is handled by
+// the caller before validating).
+func ValidateBatchSize(value int) error {
+	if value < 1 || value > 1000 {
+		return errors.New("每批发放人数必须为 1–1000")
+	}
+	return nil
+}
+
 // ValidatePassword is the server-side twin of the form check (04-api-contract.md §4.5):
 // at least 8 chars, must contain a letter and a digit, at most 72 bytes because bcrypt
 // silently truncates beyond that.

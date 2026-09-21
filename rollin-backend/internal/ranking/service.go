@@ -70,6 +70,31 @@ type Service interface {
 	// the single refill primitive every caller reuses; idempotent, never over quota.
 	// P5.
 	FillByRank(ctx context.Context, tx *gorm.DB, activityID uint64, source string) (issued int64, err error)
+	// FillBatchByRank is FillByRank with a BATCH-issue shape: an optional per-click
+	// limit (0 keeps the fill-to-quota semantics), the batch linkage stamped on every
+	// offer and the issuing OWNER/ADMIN as the audit actor. Same skip/ineligible and
+	// never-over-quota semantics.
+	FillBatchByRank(ctx context.Context, tx *gorm.DB, activityID uint64, opts FillOptions) (int64, error)
+}
+
+// FillOptions parameterizes the ranked issuance primitive. The zero value reproduces
+// the AUTO refill semantics (no limit, SYSTEM actor, OFFER_ISSUED_AUTO audit rows).
+type FillOptions struct {
+	// Source is the offer.source value (model.OfferSourceAuto / OfferSourceBatch).
+	Source string
+	// Limit bounds how many offers this pass issues (BATCH per-click size);
+	// 0 = issue until quota or the waiting list runs out. Offers skipped as
+	// INELIGIBLE do not count against the limit.
+	Limit int
+	// BatchID links every issued offer to its offer_batch row (BATCH only).
+	BatchID *uint64
+	// CreatedBy stamps offer.created_by_user_id (the issuing staff account, BATCH only).
+	CreatedBy *uint64
+	// AuditAction is the per-offer audit action; empty → OFFER_ISSUED_AUTO.
+	AuditAction string
+	// ActorType/ActorUserID attribute the per-offer audit rows; empty → SYSTEM.
+	ActorType   string
+	ActorUserID *uint64
 }
 
 // ApplicationOps is the narrow surface ranking needs of the application domain inside
@@ -380,11 +405,25 @@ func (s *service) IsReadyForAdmission(ctx context.Context, activityID uint64) (A
 // get a self-contained transaction. The activity row is re-locked inside either way,
 // so callers that already hold the lock simply block on themselves (no-op on MySQL).
 func (s *service) FillByRank(ctx context.Context, tx *gorm.DB, activityID uint64, source string) (int64, error) {
+	return s.FillBatchByRank(ctx, tx, activityID, FillOptions{Source: source})
+}
+
+// FillBatchByRank dispatches to fill with the BATCH-issue options; see FillOptions.
+func (s *service) FillBatchByRank(ctx context.Context, tx *gorm.DB, activityID uint64, opts FillOptions) (int64, error) {
+	if opts.Source == "" {
+		opts.Source = model.OfferSourceAuto
+	}
+	if opts.AuditAction == "" {
+		opts.AuditAction = audit.ActionOfferIssuedAuto
+	}
+	if opts.ActorType == "" {
+		opts.ActorType = model.ActorSystem
+	}
 	if tx == nil {
 		var issued int64
 		txErr := s.db.WithContext(ctx).Transaction(func(txx *gorm.DB) error {
 			var err error
-			issued, err = s.fill(ctx, txx, activityID, source)
+			issued, err = s.fill(ctx, txx, activityID, opts)
 			return err
 		})
 		if txErr != nil {
@@ -392,10 +431,10 @@ func (s *service) FillByRank(ctx context.Context, tx *gorm.DB, activityID uint64
 		}
 		return issued, nil
 	}
-	return s.fill(ctx, tx, activityID, source)
+	return s.fill(ctx, tx, activityID, opts)
 }
 
-func (s *service) fill(ctx context.Context, tx *gorm.DB, activityID uint64, source string) (int64, error) {
+func (s *service) fill(ctx context.Context, tx *gorm.DB, activityID uint64, opts FillOptions) (int64, error) {
 	var act model.Activity
 	if err := tx.WithContext(ctx).Clauses(activityLock).First(&act, activityID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -419,7 +458,7 @@ func (s *service) fill(ctx context.Context, tx *gorm.DB, activityID uint64, sour
 	}
 	var issued int64
 	seen := make(map[uint64]bool)
-	for occupied < int64(act.Quota) {
+	for occupied < int64(act.Quota) && (opts.Limit <= 0 || issued < int64(opts.Limit)) {
 		var (
 			app *model.Application
 			err error
@@ -487,10 +526,12 @@ func (s *service) fill(ctx context.Context, tx *gorm.DB, activityID uint64, sour
 		}
 
 		offerRow := model.Offer{
-			ApplicationID: app.ID,
-			Status:        model.OfferPending,
-			Source:        source,
-			ExpiresAt:     expiresAt,
+			ApplicationID:   app.ID,
+			Status:          model.OfferPending,
+			Source:          opts.Source,
+			BatchID:         opts.BatchID,
+			CreatedByUserID: opts.CreatedBy,
+			ExpiresAt:       expiresAt,
 		}
 		if err := offerRepo.Insert(ctx, tx, &offerRow); err != nil {
 			return issued, err
@@ -509,15 +550,24 @@ func (s *service) fill(ctx context.Context, tx *gorm.DB, activityID uint64, sour
 				return issued, err
 			}
 		}
-		if err := s.audits.Record(tx, audit.Entry{
+		entry := audit.Entry{
 			Scope:         model.ScopeActivity,
 			ActivityID:    act.ID,
-			ActorType:     model.ActorSystem,
-			Action:        audit.ActionOfferIssuedAuto,
+			ActorType:     opts.ActorType,
+			ActorUserID:   opts.ActorUserID,
+			Action:        opts.AuditAction,
 			TargetType:    "OFFER",
 			TargetID:      &offerRow.ID,
 			ChangeSummary: fmt.Sprintf("自动发放 Offer（%s，rank %s）", app.Name, derefRank(app.Rank)),
-		}); err != nil {
+		}
+		if opts.BatchID != nil {
+			// BATCH issuance: attribute the row to the triggering staff account and link
+			// it to its batch for the batch-history view.
+			entry.ActorType = opts.ActorType
+			entry.ChangeSummary = fmt.Sprintf("分批发放 Offer（%s，rank %s）", app.Name, derefRank(app.Rank))
+			entry.Detail = []byte(fmt.Sprintf(`{"batchId":%d,"source":%q}`, *opts.BatchID, opts.Source))
+		}
+		if err := s.audits.Record(tx, entry); err != nil {
 			return issued, err
 		}
 		occupied++

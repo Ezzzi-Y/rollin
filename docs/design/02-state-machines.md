@@ -25,7 +25,8 @@
 | `ranking_dirty` | BOOL | 排名待重算。=1 时不允许启动正式录取（`RANKING_DIRTY`） | 导入成功、修改 score 成功 → 置 1；重算成功 → 清 0 |
 | `ranking_frozen` | BOOL | 排名永久冻结。=1 后禁止：改 score、改 rank、重算、导入、删除 Application | 启动正式录取事务内置 1；**永不回退** |
 | `started_at` | DATETIME NULL | 首次启动正式录取的时间。非空即进入正式录取阶段 | 启动事务内写入（仅首次）；此后禁止修改 `offer_mode` |
-| `refill_paused` | BOOL | AUTO 活动递补暂停标记（D4） | 活动被禁用时置 1；重新激活**保持 1**；OWNER 执行「恢复递补并按 rank 补齐」时清 0 并立即补位 |
+| `refill_paused` | BOOL | AUTO 活动递补暂停标记（D4） | 活动被禁用时置 1；重新激活**保持 1**；OWNER 执行「恢复递补并按 rank 补齐」时清 0 并立即补位。BATCH/MANUAL 忽略此标记 |
+| `batch_size` | INT | BATCH 默认每批人数（V4） | 0=继承平台 `defaultBatchSize`；仅 `offer_mode='BATCH'` 语义生效 |
 
 ### 1.3 迁移表
 
@@ -90,9 +91,9 @@
 
 | 项 | 内容 |
 | --- | --- |
-| 触发者 | SYSTEM（AUTO 首发 / AUTO 递补）、OWNER 或 ADMIN（MANUAL 手动发放）、OWNER（SPECIAL 特殊新 Offer 只能从 DECLINED/EXPIRED 进入，见下） |
+| 触发者 | SYSTEM（AUTO 首发 / AUTO 递补）、OWNER 或 ADMIN（MANUAL 手动发放；BATCH 分批发放点击，V4）、OWNER（SPECIAL 特殊新 Offer 只能从 DECLINED/EXPIRED 进入，见下） |
 | 前置条件 | 活动 ACTIVE；排名冻结（AUTO 递补与 MANUAL 均要求 `ranking_frozen=1`，启动事务本身冻结后首发）；Candidate `accepted_offer_id IS NULL`；该 Application 无有效 Offer（uk_application_active_offer）；`ACCEPTED+PENDING < quota`（活动锁内复查） |
-| 副作用 | 同事务创建 Offer（PENDING）+ MailTask；占用 quota +1；审计（AUTO：actor=SYSTEM `OFFER_ISSUED_AUTO`；MANUAL：actor=用户 `OFFER_ISSUED_MANUAL`） |
+| 副作用 | 同事务创建 Offer（PENDING）+ MailTask；占用 quota +1；审计（AUTO：actor=SYSTEM `OFFER_ISSUED_AUTO`；MANUAL：actor=用户 `OFFER_ISSUED_MANUAL`；BATCH：actor=用户 `OFFER_ISSUED_BATCH` + 批次汇总 `OFFER_BATCH_ISSUED`，Offer 携带 `batch_id`） |
 
 #### `OFFERED → ACCEPTED`
 
@@ -100,7 +101,7 @@
 | --- | --- |
 | 触发者 | CANDIDATE（Public Offer accept，凭 OfferToken） |
 | 前置条件 | 活动 ACTIVE（DISABLED/ARCHIVED 拒绝）；Offer PENDING；`now < expires_at`；Candidate `accepted_offer_id IS NULL`（事务内重读 + 条件更新）；Candidate 分布式锁持有 |
-| 副作用 | ① 本 Offer → ACCEPTED（`accepted_at`）；② `candidate.accepted_offer_id = offer.id`（条件更新，全局只接受一次）；③ 本 Application → ACCEPTED；④ **跨活动联动（D1）**：该 Candidate 其他所有活动（含 DISABLED/ARCHIVED）的 PENDING Offer → DECLINED、Application → DECLINED、每活动写 SYSTEM 审计；⑤ 受影响 AUTO 活动写 `refill_intent`（DISABLED/ARCHIVED 活动的意图待恢复后执行；被联动活动不发信）；⑥ AUTO 主活动若 `refill_paused=0` 提交后执行递补；⑦ 审计 `OFFER_ACCEPTED`（actor=CANDIDATE，scope=主活动） |
+| 副作用 | ① 本 Offer → ACCEPTED（`accepted_at`）；② `candidate.accepted_offer_id = offer.id`（条件更新，全局只接受一次）；③ 本 Application → ACCEPTED；④ **跨活动联动（D1）**：该 Candidate 其他所有活动（含 DISABLED/ARCHIVED）的 PENDING Offer → DECLINED、Application → DECLINED、每活动写 SYSTEM 审计；⑤ 受影响 AUTO 活动写 `refill_intent`（DISABLED/ARCHIVED 活动的意图待恢复后执行；被联动活动不发信）；⑥ AUTO 主活动若 `refill_paused=0` 提交后执行递补；⑦ 审计 `OFFER_ACCEPTED`（actor=CANDIDATE 携带 `actor_candidate_id`（V4），scope=主活动） |
 
 #### `OFFERED → DECLINED`
 
@@ -108,7 +109,7 @@
 | --- | --- |
 | 触发者 | CANDIDATE（主动放弃，Public decline）；SYSTEM（跨活动联动，见 D1，不适用于主活动本身） |
 | 前置条件 | 活动 ACTIVE（CANDIDATE 触发时）；Offer PENDING；`now < expires_at`（已过期先走 EXPIRED 分支） |
-| 副作用 | ① Offer → DECLINED（`declined_at`），释放 quota；② Application → DECLINED；③ 幂等：重复 decline 返回既有终态，不重复写审计/递补；④ AUTO 且 `refill_paused=0`：同事务或提交后按 rank 补位；`refill_paused=1`：写 `refill_intent` 待恢复；MANUAL：仅释放容量；⑤ 审计 `OFFER_DECLINED`（actor=CANDIDATE 或 SYSTEM） |
+| 副作用 | ① Offer → DECLINED（`declined_at`），释放 quota；② Application → DECLINED；③ 幂等：重复 decline 返回既有终态，不重复写审计/递补；④ AUTO 且 `refill_paused=0`：同事务或提交后按 rank 补位；`refill_paused=1`：写 `refill_intent` 待恢复；MANUAL/BATCH：仅释放容量（BATCH 空位并入下一次点击的可发额度，永不自动递补，V4）；⑤ 审计 `OFFER_DECLINED`（actor=CANDIDATE 携带 `actor_candidate_id`（V4），或 SYSTEM） |
 
 #### `OFFERED → EXPIRED`
 

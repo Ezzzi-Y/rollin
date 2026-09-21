@@ -1,21 +1,25 @@
 import { useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { PauseCircle, PlayCircle, Search, Send, UserPlus } from 'lucide-react'
+import { Layers, PauseCircle, PlayCircle, Search, Send, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { apiErrorMessage } from '@/api/errorMessages'
 import {
   getActivitySmtp,
+  getBatchPreview,
   getCandidate,
+  issueOfferBatch,
   issueOfferManually,
   issueSpecialOffer,
   listCandidates,
+  listOfferBatches,
   resendOfferEmail,
   resumeRefill,
   startAdmission,
 } from '@/api/modules/activity'
 import type {
   ApplicationStatus,
+  BatchPreviewResponse,
   CandidateDetail,
   CandidateListItem,
   OfferHistoryItem,
@@ -74,6 +78,7 @@ const STATUS_OPTIONS: { value: ApplicationStatus; label: string }[] = [
 
 const OFFER_SOURCE_LABEL: Record<string, string> = {
   AUTO: 'AUTO · 自动',
+  BATCH: 'BATCH · 分批',
   MANUAL: 'MANUAL · 手动',
   SPECIAL: 'SPECIAL · 特殊',
 }
@@ -182,6 +187,252 @@ function OfferHistoryDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// ---------- BATCH 分批发放对话框（§6.4；预览单 + 可调本批人数） ----------
+
+function BatchIssueDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const ws = useActivityWorkspace()
+  const queryClient = useQueryClient()
+  const [limitInput, setLimitInput] = useState('')
+  const [limit, setLimit] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+
+  // limit=0 → 后端按活动配置解析默认批大小；前端把返回值回填输入框作为默认
+  const previewQuery = useQuery({
+    queryKey: ['activity', ws.slug, 'batch-preview', { open, limit }],
+    queryFn: () => getBatchPreview(ws.slug, limit || undefined),
+    enabled: open,
+  })
+  const preview: BatchPreviewResponse | undefined = previewQuery.data
+
+  const shownLimit = limit > 0 ? limit : preview?.batchSize ?? 0
+
+  const mutation = useMutation({
+    mutationFn: () => issueOfferBatch(ws.slug, shownLimit > 0 ? shownLimit : undefined),
+    onSuccess: (result) => {
+      toast.success(`第 ${result.batchNo} 批已发放 ${result.issued} 个 Offer`, {
+        description: `当前占用 ${result.occupied} / ${result.quota}；确认邮件已入队，截止 ${formatDateTime(result.expiresAt)}。`,
+      })
+      void queryClient.invalidateQueries({ queryKey: ['activity', ws.slug] })
+      setLimitInput('')
+      setLimit(0)
+      setError(null)
+      onOpenChange(false)
+    },
+    onError: (err) => {
+      setError(apiErrorMessage(err, '分批发放失败，请稍后重试'))
+    },
+  })
+
+  const items = preview?.items ?? []
+  const skipCount = items.filter((item) => item.acceptedElsewhere).length
+  const overLimit = shownLimit > (preview?.maxIssuable ?? 0)
+  const canSubmit =
+    preview !== undefined && shownLimit >= 1 && shownLimit <= 1000 && !overLimit && !mutation.isPending
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!mutation.isPending) {
+          if (!next) {
+            setLimitInput('')
+            setLimit(0)
+            setError(null)
+          }
+          onOpenChange(next)
+        }
+      }}
+    >
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>发放下一批 Offer（第 {preview?.nextBatchNo ?? '—'} 批）</DialogTitle>
+          <DialogDescription>
+            按 rank 顺序发放一批；空出的名额不会自动递补，由下一次点击消化。确认邮件将按服务器限流排队发送。
+          </DialogDescription>
+        </DialogHeader>
+
+        {previewQuery.isPending ? (
+          <LoadingState label="正在生成本批预览…" fullHeight={false} />
+        ) : previewQuery.isError ? (
+          <ErrorState
+            message={apiErrorMessage(previewQuery.error, '预览加载失败')}
+            onRetry={() => void previewQuery.refetch()}
+          />
+        ) : (
+          <>
+            <div className="flex flex-wrap items-end gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+              <div className="space-y-1">
+                <Label htmlFor="batch-limit">本批人数</Label>
+                <Input
+                  id="batch-limit"
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={limitInput || (shownLimit > 0 ? String(shownLimit) : '')}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    setLimitInput(value)
+                    setLimit(Number(value) || 0)
+                  }}
+                  className="w-28"
+                  aria-invalid={overLimit}
+                />
+              </div>
+              <div className="pb-1 text-xs text-muted-foreground">
+                剩余可发 {preview?.maxIssuable ?? 0} 人（名额 {preview?.quota ?? 0}，占用 {preview?.occupied ?? 0}）
+                <span className="block">候补中 {preview?.waiting ?? 0} 人；默认批大小 {preview?.batchSize ?? '—'} 人</span>
+              </div>
+            </div>
+            {overLimit ? (
+              <p role="alert" className="text-sm text-destructive">
+                本批人数超过剩余可发额度（{preview?.maxIssuable ?? 0}），请调低后重试。
+              </p>
+            ) : null}
+
+            {items.length === 0 ? (
+              <EmptyState
+                title="没有可发放的候选人"
+                description={(preview?.waiting ?? 0) === 0 ? '当前没有候补中的候选人。' : '剩余名额为 0；如需继续发放请先扩大录取名额。'}
+              />
+            ) : (
+              <div className="max-h-72 overflow-y-auto rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-16">排名</TableHead>
+                      <TableHead>姓名</TableHead>
+                      <TableHead className="hidden md:table-cell">学号</TableHead>
+                      <TableHead className="hidden lg:table-cell">邮箱</TableHead>
+                      <TableHead className="text-right">说明</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((item) => (
+                      <TableRow key={item.applicationId} className={item.acceptedElsewhere ? 'opacity-60' : ''}>
+                        <TableCell className="tabular-nums">{item.rank ?? '—'}</TableCell>
+                        <TableCell className="font-medium">{item.name}</TableCell>
+                        <TableCell className="hidden font-mono text-xs md:table-cell">{item.studentId}</TableCell>
+                        <TableCell className="hidden truncate text-xs lg:table-cell">{item.email}</TableCell>
+                        <TableCell className="text-right text-xs">
+                          {item.acceptedElsewhere ? (
+                            <span className="text-amber-700">已接受其他活动，将跳过</span>
+                          ) : (
+                            <span className="text-muted-foreground">发放 Offer</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+            {items.length > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                确认后将为上表未被跳过的候选人发出 Offer（至多 {shownLimit} 人；实际以名额与候补为准）。
+                {skipCount > 0 ? ` 其中 ${skipCount} 人已接受其他活动，将自动跳过。` : ''}
+              </p>
+            ) : null}
+          </>
+        )}
+
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+
+        <DialogFooter className="gap-2 sm:justify-end">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
+            取消
+          </Button>
+          <Button disabled={!canSubmit} onClick={() => mutation.mutate()}>
+            {mutation.isPending ? '发放中…' : `确认发放${shownLimit > 0 ? ` ${shownLimit} 人` : ''}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ---------- BATCH 批次历史卡片（§6.4；"第 N 批，发放 M 人，操作人、时间"） ----------
+
+function BatchHistoryCard() {
+  const ws = useActivityWorkspace()
+  const [page, setPage] = useState(1)
+
+  const listQuery = useQuery({
+    queryKey: ['activity', ws.slug, 'offer-batches', { page }],
+    queryFn: () => listOfferBatches(ws.slug, { page, pageSize: 10 }),
+    placeholderData: keepPreviousData,
+    enabled: ws.slug !== '',
+  })
+
+  const data = listQuery.data
+  if (listQuery.isPending) {
+    return <Card className="py-0"><CardContent className="p-4"><LoadingState label="正在加载批次历史…" fullHeight={false} /></CardContent></Card>
+  }
+  if (listQuery.isError || !data || data.items.length === 0) {
+    if (listQuery.isError) {
+      return <ErrorState message={apiErrorMessage(listQuery.error, '批次历史加载失败')} onRetry={() => void listQuery.refetch()} />
+    }
+    return (
+      <EmptyState
+        title="还没有发放过批次"
+        description="点击「发放下一批」后，每一批将在这里留下一行记录。"
+      />
+    )
+  }
+
+  return (
+    <Card className="py-0">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Layers className="size-4" aria-hidden />
+          批次历史
+        </CardTitle>
+        <CardDescription>每一批发放的完整记录，按批次倒序。</CardDescription>
+      </CardHeader>
+      <CardContent className="overflow-x-auto p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-24">批次</TableHead>
+              <TableHead>发放人数</TableHead>
+              <TableHead>操作人</TableHead>
+              <TableHead>时间</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.items.map((batch) => (
+              <TableRow key={batch.id}>
+                <TableCell className="font-medium">第 {batch.batchNo} 批</TableCell>
+                <TableCell className="tabular-nums">{batch.issuedCount} 人</TableCell>
+                <TableCell className="text-sm">{batch.createdByName ?? '—'}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{formatDateTime(batch.createdAt)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+      <CardContent className="border-t py-3">
+        <Pagination
+          page={data.page}
+          pageSize={data.pageSize}
+          total={data.total}
+          isFetching={listQuery.isFetching}
+          onPageChange={setPage}
+        />
+      </CardContent>
+    </Card>
   )
 }
 
@@ -468,7 +719,9 @@ function StartAdmissionCard() {
         description:
           result.offerMode === 'AUTO'
             ? `排名已冻结；已按 rank 首发 ${result.offersIssued} 个 Offer。`
-            : '排名已冻结；MANUAL 模式下请在「Offer」页手动发放。',
+            : result.offerMode === 'BATCH'
+              ? '排名已冻结；BATCH 分批模式请在「Offer」页点击「发放下一批」。'
+              : '排名已冻结；MANUAL 模式下请在「Offer」页手动发放。',
       })
       void queryClient.invalidateQueries({ queryKey: ['activity', ws.slug] })
       setOpen(false)
@@ -486,11 +739,16 @@ function StartAdmissionCard() {
     { label: '活动处于运行中（ACTIVE）', ok: info.status === 'ACTIVE', hint: '活动被禁用或归档时无法启动' },
     { label: '录取名额 quota ≥ 1', ok: (stats?.quota ?? 0) >= 1 },
     { label: '排名已同步（无待重算修改）', ok: !info.rankingDirty, hint: '存在待重算修改时需先在「排名」页重算' },
-    {
-      label: '活动 SMTP 已配置且验证有效',
-      ok: smtpQuery.data ? smtpQuery.data.configured : false,
-      hint: smtpQuery.data ? undefined : '正在检查 SMTP 配置…',
-    },
+    // 仅 AUTO 启动即首发邮件，SMTP 是服务端硬性前置；MANUAL/BATCH 在每次实际发放时校验。
+    ...(info.offerMode === 'AUTO'
+      ? [
+          {
+            label: '活动 SMTP 已配置且验证有效',
+            ok: smtpQuery.data ? smtpQuery.data.configured : false,
+            hint: smtpQuery.data ? undefined : '正在检查 SMTP 配置…',
+          },
+        ]
+      : []),
   ]
   const allPassed = checks.every((check) => check.ok)
 
@@ -503,7 +761,11 @@ function StartAdmissionCard() {
         </CardTitle>
         <CardDescription>
           启动后排名将<b>永久冻结</b>，Offer 发放模式锁定（{OFFER_MODE_LABEL[info.offerMode]}）。
-          {info.offerMode === 'AUTO' ? ' AUTO 模式将立即按 rank 向前 quota 名候选人发放 Offer。' : ' MANUAL 模式仅冻结排名，发放由人工执行。'}
+          {info.offerMode === 'AUTO'
+            ? ' AUTO 模式将立即按 rank 向前 quota 名候选人发放 Offer。'
+            : info.offerMode === 'BATCH'
+              ? ' BATCH 分批模式仅冻结排名、不自动发放；此后每次「发放下一批」按 rank 发出一批，名额空出不自动递补。'
+              : ' MANUAL 模式仅冻结排名，发放由人工执行。'}
           此操作不可撤销。
         </CardDescription>
       </CardHeader>
@@ -656,12 +918,14 @@ function OffersContent() {
   const [keyword, setKeyword] = useState('')
   const [historyId, setHistoryId] = useState<number | null>(null)
   const [manualOpen, setManualOpen] = useState(false)
+  const [batchOpen, setBatchOpen] = useState(false)
   const [specialTarget, setSpecialTarget] = useState<CandidateListItem | null>(null)
   const [resendTarget, setResendTarget] = useState<ResendTarget | null>(null)
 
   const info = ws.info
   const frozen = info?.rankingFrozen ?? false
   const isManual = info?.offerMode === 'MANUAL'
+  const isBatch = info?.offerMode === 'BATCH'
 
   const listQuery = useQuery({
     queryKey: ['activity', ws.slug, 'candidates', { page, status: statusFilter, keyword, purpose: 'offers' }],
@@ -696,11 +960,19 @@ function OffersContent() {
 
   const manualDisabledReason = ws.readOnly
     ? '活动当前为只读状态'
-    : !isManual
-      ? 'AUTO 模式下系统按 rank 自动滚动，不允许手动发放（需求 §41）'
-      : !frozen
-        ? '启动正式录取（冻结排名）后才能发放 Offer'
-        : null
+    : isBatch
+      ? 'BATCH 分批模式按排名整批发放，不支持单人手动发放；请使用「发放下一批」（预览单中可临时调整本批人数）'
+      : !isManual
+        ? 'AUTO 模式下系统按 rank 自动滚动，不允许手动发放（需求 §41）'
+        : !frozen
+          ? '启动正式录取（冻结排名）后才能发放 Offer'
+          : null
+
+  const batchDisabledReason = ws.readOnly
+    ? '活动当前为只读状态'
+    : !frozen
+      ? '启动正式录取（冻结排名）后才能发放 Offer'
+      : null
 
   return (
     <>
@@ -708,14 +980,27 @@ function OffersContent() {
         title="Offer 管理"
         description="当前与历史 Offer 进度；启动录取、恢复递补与人工发放入口（需求 §33–§41）"
         actions={
-          <Button
-            disabled={manualDisabledReason !== null}
-            title={manualDisabledReason ?? undefined}
-            onClick={() => setManualOpen(true)}
-          >
-            <UserPlus className="size-4" aria-hidden />
-            手动发放 Offer
-          </Button>
+          <>
+            {isBatch && frozen ? (
+              <Button
+                disabled={batchDisabledReason !== null}
+                title={batchDisabledReason ?? undefined}
+                onClick={() => setBatchOpen(true)}
+              >
+                <Layers className="size-4" aria-hidden />
+                发放下一批
+              </Button>
+            ) : null}
+            <Button
+              variant={isBatch && frozen ? 'outline' : 'default'}
+              disabled={manualDisabledReason !== null}
+              title={manualDisabledReason ?? undefined}
+              onClick={() => setManualOpen(true)}
+            >
+              <UserPlus className="size-4" aria-hidden />
+              手动发放 Offer
+            </Button>
+          </>
         }
       />
 
@@ -877,8 +1162,11 @@ function OffersContent() {
         />
       ) : null}
 
+      {isBatch && frozen ? <BatchHistoryCard /> : null}
+
       <OfferHistoryDialog applicationId={historyId} onClose={() => setHistoryId(null)} />
       <ManualIssueDialog open={manualOpen} onOpenChange={setManualOpen} />
+      <BatchIssueDialog open={batchOpen} onOpenChange={setBatchOpen} />
       <SpecialIssueDialog target={specialTarget} onClose={() => setSpecialTarget(null)} />
 
       <ConfirmDialog
