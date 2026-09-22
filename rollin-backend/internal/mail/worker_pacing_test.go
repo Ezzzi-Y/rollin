@@ -99,11 +99,11 @@ type timingSender struct {
 	attime []time.Time
 }
 
-func (s *timingSender) Send(ctx context.Context, cfg *smtpconfig.Effective, to, subject, body string, timeout time.Duration) error {
+func (s *timingSender) Send(ctx context.Context, cfg *smtpconfig.Effective, to, subject, body, contentType string, timeout time.Duration) error {
 	s.mu.Lock()
 	s.attime = append(s.attime, time.Now())
 	s.mu.Unlock()
-	return s.scriptedSender.Send(ctx, cfg, to, subject, body, timeout)
+	return s.scriptedSender.Send(ctx, cfg, to, subject, body, contentType, timeout)
 }
 
 func (s *timingSender) started(i int) time.Time {
