@@ -1,7 +1,6 @@
 package mail
 
 import (
-	_ "embed"
 	"fmt"
 	"html"
 	"regexp"
@@ -10,9 +9,6 @@ import (
 
 	"rollin-backend/internal/model"
 )
-
-//go:embed templates/offer.html
-var embeddedOfferHTML string
 
 // Variable whitelists per template type (04 §5.13: 类型化变量白名单). The OFFER list is
 // contract-fixed; the INVITE lists mirror the InvitePayload plus the two link/site
@@ -124,7 +120,7 @@ func roleDisplay(role string) string {
 func defaultTemplate(templateType string) (subject, body string) {
 	switch templateType {
 	case model.TemplateOffer:
-		return "{{siteName}}｜录取通知", embeddedOfferHTML
+		return "{{siteName}}｜录取通知", defaultOfferHTML
 	case model.TemplateInviteOwner:
 		return "{{siteName}}｜活动负责人邀请",
 			"{{inviteeName}}，你好：\r\n\r\n你被邀请担任活动「{{activityTitle}}」的负责人。" +
