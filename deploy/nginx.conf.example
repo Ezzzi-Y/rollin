@@ -10,7 +10,7 @@
 #   浏览器 ── 宿主机 nginx（本文件）
 #              ├── admin.xxx.xxx  →  / 与 /assets/* 等  → /var/www/rollin/current（磁盘静态）
 #              │                     /api/*             → rollin_backend 127.0.0.1:8080
-#              └── t.xxx.xxx      →  /o/:token         → 内部 rewrite 到静态 Offer 页（地址栏保持短链）
+#              └── t.xxx.xxx      →  /o/:token         → /lab/en/homepage/index.html?token=…（静态 Offer 页）
 #                                    /api/public/*     → rollin_backend 127.0.0.1:8080
 #                                    其余 /api/*       → 404（白名单隔离）
 #                                    其余路径          → 404
@@ -118,13 +118,11 @@ server {
         return 404 '{"code":"NOT_FOUND","message":"链接无效或已失效"}';
     }
 
-    # ── Offer 深链 /o/{token}：内部 rewrite 到静态视觉 Offer 页 ──
-    # 浏览器地址栏保持 /o/{token}，静态页通过 query string 读取 token。
+    # ── Offer 深链 /o/{token}：跳转到静态视觉 Offer 页 ──
     # 页面本身不修改业务状态；Token 不写入 nginx access log。
     location ~ ^/o/([^/]+)/?$ {
         access_log /var/log/nginx/rollin-offer.access.log rollin_offer_safe;
-        set $offer_token $1;
-        rewrite ^ /lab/en/homepage/index.html?token=$offer_token last;
+        return 302 /lab/en/homepage/index.html?token=$1;
     }
 
     # ── 静态招新页及其本地依赖 ──
