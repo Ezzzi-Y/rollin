@@ -1,6 +1,7 @@
 package mail
 
 import (
+	_ "embed"
 	"fmt"
 	"html"
 	"regexp"
@@ -9,6 +10,9 @@ import (
 
 	"rollin-backend/internal/model"
 )
+
+//go:embed templates/offer.html
+var embeddedOfferHTML string
 
 // Variable whitelists per template type (04 §5.13: 类型化变量白名单). The OFFER list is
 // contract-fixed; the INVITE lists mirror the InvitePayload plus the two link/site
@@ -120,9 +124,7 @@ func roleDisplay(role string) string {
 func defaultTemplate(templateType string) (subject, body string) {
 	switch templateType {
 	case model.TemplateOffer:
-		return "{{activityTitle}}｜录取通知",
-			"{{candidateName}}，你好：\r\n\r\n恭喜你通过「{{activityTitle}}」的选拔！" +
-				"请在 {{expiresAt}} 前打开以下链接确认或放弃本次录取资格：\r\n\r\n{{offerUrl}}\r\n\r\n{{siteName}}"
+		return "{{siteName}}｜录取通知", embeddedOfferHTML
 	case model.TemplateInviteOwner:
 		return "{{siteName}}｜活动负责人邀请",
 			"{{inviteeName}}，你好：\r\n\r\n你被邀请担任活动「{{activityTitle}}」的负责人。" +
@@ -135,3 +137,49 @@ func defaultTemplate(templateType string) (subject, body string) {
 		return "", ""
 	}
 }
+
+// defaultOfferHTML is sent as text/html for OFFER tasks. Keep every style inline or
+// in the small responsive block so it remains usable in common mailbox clients.
+const defaultOfferHTML = `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<style>@media screen and (max-width:620px){.wrap{width:100%!important;border-radius:0!important}.pad{padding-left:22px!important;padding-right:22px!important}.button{display:block!important;width:auto!important}}</style>
+</head>
+<body style="margin:0;padding:0;background:#f2f3f8;color:#182033;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',Arial,sans-serif;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">恭喜你通过 {{siteName}} 的面试，请查看并确认专属 Offer。</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f2f3f8;"><tr><td align="center" style="padding:32px 12px 42px;">
+<table role="presentation" class="wrap" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 12px 36px rgba(31,37,70,.10);">
+<tr><td style="height:6px;background:#5146b8;font-size:0;line-height:0;">&nbsp;</td></tr>
+<tr><td class="pad" style="padding:32px 44px 30px;background:#24214f;background:linear-gradient(135deg,#24214f 0%,#4a4297 100%);">
+<img src="https://image.ezzi.asia/2026/9/e61b8fe7d9394752b1ce940c5650b903.png" width="160" alt="{{siteName}}" style="display:block;width:160px;height:auto;max-width:100%;border:0;">
+<p style="margin:34px 0 10px;font-size:12px;line-height:18px;letter-spacing:1.8px;color:#cbc7ff;font-weight:700;">INTERVIEW RESULT · OFFER</p>
+<h1 style="margin:0;font-size:30px;line-height:42px;letter-spacing:-.4px;color:#fff;font-weight:700;">恭喜你，面试通过</h1>
+<p style="margin:14px 0 0;font-size:15px;line-height:25px;color:#e5e3ff;">{{siteName}} 诚邀你查看并确认本次录取 Offer。</p>
+</td></tr>
+<tr><td class="pad" style="padding:34px 44px 0;">
+<p style="margin:0 0 10px;font-size:16px;line-height:26px;color:#1c2538;">{{candidateName}}，你好：</p>
+<p style="margin:0;font-size:15px;line-height:27px;color:#5c6577;">感谢你认真参与本次面试。经过综合评估，我们很高兴地通知你：你已通过 {{siteName}} 的选拔。</p>
+</td></tr>
+<tr><td class="pad" style="padding:26px 44px 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f7f6ff;border:1px solid #e7e4ff;border-radius:14px;">
+<tr><td style="padding:19px 20px 5px;font-size:12px;line-height:18px;color:#7268c7;font-weight:700;letter-spacing:1px;">录取信息</td></tr>
+<tr><td style="padding:0 20px 17px;font-size:20px;line-height:30px;color:#292460;font-weight:700;">{{siteName}}</td></tr>
+<tr><td style="padding:0 20px 19px;font-size:13px;line-height:22px;color:#747d90;">确认截止时间<br><strong style="font-size:14px;color:#a1530b;">{{expiresAt}}</strong></td></tr>
+</table>
+</td></tr>
+<tr><td class="pad" align="center" style="padding:30px 44px 8px;">
+<!--[if mso]><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" href="{{offerUrl}}" style="height:52px;v-text-anchor:middle;width:300px;" arcsize="18%" fillcolor="#5146b8" stroke="f"><w:anchorlock/><center style="color:#ffffff;font-family:Arial,sans-serif;font-size:15px;font-weight:bold;">查看并确认我的 Offer</center></v:roundrect><![endif]-->
+<!--[if !mso]><!--><a class="button" href="{{offerUrl}}" style="display:inline-block;width:300px;box-sizing:border-box;padding:16px 22px;border-radius:10px;background:#5146b8;color:#fff;text-align:center;text-decoration:none;font-size:15px;line-height:20px;font-weight:700;box-shadow:0 8px 16px rgba(81,70,184,.22);">查看并确认我的 Offer&nbsp; →</a><!--<![endif]-->
+</td></tr>
+<tr><td class="pad" align="center" style="padding:4px 44px 0;font-size:12px;line-height:20px;color:#9299aa;">请在截止时间前完成确认</td></tr>
+<tr><td class="pad" style="padding:28px 44px 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:1px solid #eaecf1;font-size:0;line-height:0;">&nbsp;</td></tr></table></td></tr>
+<tr><td class="pad" style="padding:22px 44px 0;"><p style="margin:0 0 8px;font-size:13px;line-height:21px;color:#485268;font-weight:700;">温馨提示</p><p style="margin:0;font-size:13px;line-height:23px;color:#7a8394;">此链接与本人绑定，请勿转发。若你同时申请了多个方向，请在确认前仔细核实；确认一个 Offer 后，其他方向的录取资格可能随之失效。</p></td></tr>
+<tr><td class="pad" style="padding:26px 44px 36px;"><p style="margin:0;font-size:14px;line-height:23px;color:#485268;">期待与你在 {{siteName}} 相见。</p><p style="margin:8px 0 0;font-size:14px;line-height:23px;color:#485268;font-weight:700;">{{siteName}} 招新组</p></td></tr>
+</table>
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;"><tr><td align="center" style="padding:18px 20px 0;font-size:11px;line-height:18px;color:#a2a8b6;">本邮件由系统自动发送，请勿直接回复。</td></tr></table>
+</td></tr></table>
+</body>
+</html>`

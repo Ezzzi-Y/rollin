@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#111" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="100%" height="100%">
+  <!-- 饮水与休息区：带把手的杯子 + 热气 -->
+  <path d="M5.6 8.2h9.2v6.6a4.6 4.6 0 0 1-4.6 4.6h0a4.6 4.6 0 0 1-4.6-4.6z"/>
+  <path d="M14.8 9.4h1.7a2.6 2.6 0 0 1 0 5.2h-1.7"/>
+  <path d="M8.4 5.2V3.4M12 5.2V3.4"/>
+</svg>

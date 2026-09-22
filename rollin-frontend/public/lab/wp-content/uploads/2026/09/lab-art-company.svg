@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 458 387" fill="none" width="100%" height="100%">
+  <!-- 以陪伴为常：两个人 + 传递的箭头 -->
+  <circle cx="229" cy="176" r="150" fill="#7A5AF8" opacity=".2"/>
+  <g stroke="#111" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="158" cy="132" r="34" fill="#fff"/>
+    <path d="M96 276c8-40 30-60 62-60s54 20 62 60"/>
+    <circle cx="306" cy="158" r="30" fill="#fff"/>
+    <path d="M252 288c7-35 26-52 54-52s47 17 54 52"/>
+    <path d="M212 196h40"/>
+    <path d="M240 178l20 18-20 18"/>
+  </g>
+  <path d="M96 318h266" stroke="#0072e3" stroke-width="12" stroke-linecap="round"/>
+</svg>

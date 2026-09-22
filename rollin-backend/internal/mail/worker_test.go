@@ -30,7 +30,7 @@ type scriptedSender struct {
 	tos     []string
 }
 
-func (s *scriptedSender) Send(_ context.Context, _ *smtpconfig.Effective, to, _, body string, _ time.Duration) error {
+func (s *scriptedSender) Send(_ context.Context, _ *smtpconfig.Effective, to, _, body, _ string, _ time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls++

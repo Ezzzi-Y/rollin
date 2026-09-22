@@ -126,6 +126,12 @@ tar -xzf "$ARCHIVE" -C "$staging"
 [ -d "${staging}/assets" ] || warn "产物中未找到 assets/ 目录，请确认 Vite 构建输出是否正常"
 
 # -----------------------------------------------------------------------------
+# 静态 Offer 页与其本地依赖必须随同一版本发布，避免 /o/ 跳转后出现半套资源。
+[ -f "$staging/lab/en/homepage/index.html" ] || die "产物缺少静态 Offer 页 lab/en/homepage/index.html"
+[ -d "$staging/lab/wp-content" ] || die "产物缺少静态 Offer 页资源 lab/wp-content/"
+[ -d "$staging/cdn.jsdelivr.net" ] || die "产物缺少本地依赖 cdn.jsdelivr.net/"
+[ -d "$staging/cdnjs.cloudflare.com" ] || die "产物缺少本地依赖 cdnjs.cloudflare.com/"
+
 # 3. 原子放入版本目录
 # -----------------------------------------------------------------------------
 if [ -d "$target_dir" ]; then

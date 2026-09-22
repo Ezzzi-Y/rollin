@@ -24,6 +24,9 @@ on:
     branches: [main]
     paths:
       - 'rollin-frontend/**'
+      - 'rollin-frontend/public/lab/**'
+      - 'rollin-frontend/public/cdn.jsdelivr.net/**'
+      - 'rollin-frontend/public/cdnjs.cloudflare.com/**'
       - 'deploy/nginx.conf.example'
       - 'deploy/scripts/frontend-deploy.sh'
       - '.github/workflows/deploy-frontend.yml'
@@ -66,6 +69,15 @@ jobs:
       - name: 构建
         working-directory: rollin-frontend
         run: npm run build
+
+      - name: 检查静态 Offer 页已纳入前端产物
+        run: |
+          set -euo pipefail
+          test -f rollin-frontend/public/lab/en/homepage/index.html
+          test -d rollin-frontend/public/lab/wp-content
+          test -d rollin-frontend/public/cdn.jsdelivr.net
+          test -d rollin-frontend/public/cdnjs.cloudflare.com
+          test -f rollin-frontend/dist/lab/en/homepage/index.html
 
       - name: 打包产物
         id: package
@@ -195,7 +207,7 @@ jobs:
           failed=0
           check() {
             local name="$1" url="$2" expect="$3" code
-            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$url" || true)"
+            code="$(curl -sS -L -o /dev/null -w '%{http_code}' --max-time 20 "$url" || true)"
             code="${code:-000}"
             echo "${name} → HTTP ${code}（期望 ${expect}）"
             if [ "$code" != "$expect" ]; then
@@ -209,6 +221,7 @@ jobs:
           check "候选人域名 API 白名单隔离" "${CANDIDATE_BASE_URL}/api/platform/settings" 404
           check "候选人域名不暴露导入接口" "${CANDIDATE_BASE_URL}/api/import/candidates" 404
 
+          check "候选人域名静态 Offer 页" "$CANDIDATE_BASE_URL/lab/en/homepage/index.html" 200
           [ "$failed" = "0" ] || exit 1
 
   notify:

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 458 387" fill="none" width="100%" height="100%">
+  <!-- 以实践为径：铅笔 + 灯泡 -->
+  <circle cx="229" cy="176" r="150" fill="#41E277" opacity=".22"/>
+  <g stroke="#111" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M104 300l34-96 58 58-96 34z" fill="#fff"/>
+    <path d="M138 204l44 44"/>
+    <circle cx="292" cy="146" r="56" fill="#fff"/>
+    <path d="M270 214h44"/>
+    <path d="M278 236h28"/>
+    <path d="M292 62v-18M348 90l13-13M236 90l-13-13M356 146h19M209 146h-19"/>
+  </g>
+  <path d="M96 330h266" stroke="#0072e3" stroke-width="12" stroke-linecap="round"/>
+</svg>

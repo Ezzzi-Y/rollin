@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 458 387" fill="none" width="100%" height="100%">
+  <!-- 以同学为本：三个人 + 一圈强调色 -->
+  <circle cx="229" cy="176" r="150" fill="#FFD633" opacity=".22"/>
+  <g stroke="#111" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="229" cy="120" r="38" fill="#fff"/>
+    <path d="M166 268c8-42 32-64 63-64s55 22 63 64"/>
+    <circle cx="126" cy="152" r="29" fill="#fff"/>
+    <path d="M78 262c7-33 25-50 48-50s41 17 48 50"/>
+    <circle cx="332" cy="152" r="29" fill="#fff"/>
+    <path d="M284 262c7-33 25-50 48-50s41 17 48 50"/>
+  </g>
+  <path d="M150 312h158" stroke="#0072e3" stroke-width="12" stroke-linecap="round"/>
+</svg>

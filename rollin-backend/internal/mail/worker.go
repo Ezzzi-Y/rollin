@@ -88,7 +88,7 @@ func DefaultWorkerConfig(every, sendTimeout time.Duration) WorkerConfig {
 
 // Sender abstracts one SMTP submission so tests can inject an in-memory fake.
 type Sender interface {
-	Send(ctx context.Context, cfg *smtpconfig.Effective, to, subject, body string, timeout time.Duration) error
+	Send(ctx context.Context, cfg *smtpconfig.Effective, to, subject, body, contentType string, timeout time.Duration) error
 }
 
 // WorkerDeps wires the collaborators.
@@ -269,7 +269,7 @@ func (w *Worker) processOffer(ctx context.Context, task *model.MailTask) {
 		w.finishFailure(ctx, task, err)
 		return
 	}
-	sendErr := w.deps.Sender.Send(ctx, cfg, task.Recipient, subject, body, w.cfg.SendTimeout)
+	sendErr := w.deps.Sender.Send(ctx, cfg, task.Recipient, subject, body, "text/html", w.cfg.SendTimeout)
 	w.recordSend(cfg)
 	if sendErr != nil {
 		w.finishFailure(ctx, task, sendErr)
@@ -348,7 +348,8 @@ func (w *Worker) renderOffer(ctx context.Context, task *model.MailTask, rawToken
 		"activityTitle": activity.Title,
 		"offerUrl":      publicBase + "/o/" + rawToken,
 		"expiresAt":     expiresAtText(offer.ExpiresAt),
-		"siteName":      w.deps.Settings.Get(ctx, settings.KeySiteName),
+		// OFFER 邮件中的 siteName 表示本活动名称，不能使用平台全局名称。
+		"siteName":      activity.Title,
 	}
 	subject := renderTemplate(subjectTpl, allowed, vars, w.warnUnknown(task))
 	body := renderTemplate(bodyTpl, allowed, vars, w.warnUnknown(task))
@@ -413,7 +414,7 @@ func (w *Worker) processInvite(ctx context.Context, task *model.MailTask) {
 		w.finishFailure(ctx, task, err)
 		return
 	}
-	sendErr := w.deps.Sender.Send(ctx, cfg, task.Recipient, subject, body, w.cfg.SendTimeout)
+	sendErr := w.deps.Sender.Send(ctx, cfg, task.Recipient, subject, body, "text/plain", w.cfg.SendTimeout)
 	w.recordSend(cfg)
 	if sendErr != nil {
 		w.finishFailure(ctx, task, sendErr)
@@ -679,7 +680,7 @@ func recheckInvite(ctx context.Context, exec *gorm.DB, task *model.MailTask, now
 // send timeout as the per-connection deadline.
 type netSmtpSender struct{}
 
-func (netSmtpSender) Send(ctx context.Context, cfg *smtpconfig.Effective, to, subject, body string, timeout time.Duration) error {
+func (netSmtpSender) Send(ctx context.Context, cfg *smtpconfig.Effective, to, subject, body, contentType string, timeout time.Duration) error {
 	client, err := smtpconfig.DialClient(ctx, cfg, timeout)
 	if err != nil {
 		return err
@@ -698,7 +699,7 @@ func (netSmtpSender) Send(ctx context.Context, cfg *smtpconfig.Effective, to, su
 	if err != nil {
 		return fmt.Errorf("DATA 失败: %w", err)
 	}
-	if _, err := writer.Write(smtpconfig.BuildMessage(cfg.From, to, subject, body)); err != nil {
+	if _, err := writer.Write(smtpconfig.BuildMessage(cfg.From, to, subject, body, contentType)); err != nil {
 		_ = writer.Close()
 		return fmt.Errorf("写入邮件内容失败: %w", err)
 	}

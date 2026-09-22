@@ -10,7 +10,7 @@
 #   浏览器 ── 宿主机 nginx（本文件）
 #              ├── admin.xxx.xxx  →  / 与 /assets/* 等  → /var/www/rollin/current（磁盘静态）
 #              │                     /api/*             → rollin_backend 127.0.0.1:8080
-#              └── t.xxx.xxx      →  /o/:token         → /var/www/rollin/current（SPA fallback）
+#              └── t.xxx.xxx      →  /o/:token         → /lab/en/homepage/index.html?token=…（静态 Offer 页）
 #                                    /api/public/*     → rollin_backend 127.0.0.1:8080
 #                                    其余 /api/*       → 404（白名单隔离）
 #                                    其余路径          → 404
@@ -118,14 +118,29 @@ server {
         return 404 '{"code":"NOT_FOUND","message":"链接无效或已失效"}';
     }
 
-    # ── Offer 深链 /o/{token}：SPA fallback 到 index.html，由前端路由接管 ──
-    # 访问页面本身不修改任何业务状态（需求 54 章），Token 也不写入访问日志。
-    location ^~ /o/ {
+    # ── Offer 深链 /o/{token}：跳转到静态视觉 Offer 页 ──
+    # 页面本身不修改业务状态；Token 不写入 nginx access log。
+    location ~ ^/o/([^/]+)/?$ {
         access_log /var/log/nginx/rollin-offer.access.log rollin_offer_safe;
-        try_files $uri /index.html;
+        return 302 /lab/en/homepage/index.html?token=$1;
     }
 
-    # ── 页面所需静态资源（Vite 指纹产物 + 站点图标）──
+    # ── 静态招新页及其本地依赖 ──
+    # 源文件放在 rollin-frontend/public/，Vite 构建后随发布包落在 current/ 下。
+    location ^~ /lab/ {
+        try_files $uri =404;
+    }
+    location ^~ /cdn.jsdelivr.net/ {
+        try_files $uri =404;
+    }
+    location ^~ /cdnjs.cloudflare.com/ {
+        try_files $uri =404;
+    }
+    location = /lab/en/homepage/index.html {
+        expires -1;
+    }
+
+    # ── 管理端 Vite 页面所需静态资源 ──
     location ^~ /assets/ {
         expires 1y;                 # 指纹产物内容不变即 URL 不变，可长缓存
         try_files $uri =404;

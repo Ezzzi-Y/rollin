@@ -471,7 +471,7 @@ func sendMail(ctx context.Context, cfg *Effective, to, subject, body string, tim
 	if err != nil {
 		return fmt.Errorf("DATA 失败: %w", err)
 	}
-	if _, err := writer.Write(BuildMessage(cfg.From, to, subject, body)); err != nil {
+	if _, err := writer.Write(BuildMessage(cfg.From, to, subject, body, "text/plain")); err != nil {
 		_ = writer.Close()
 		return fmt.Errorf("写入邮件内容失败: %w", err)
 	}
@@ -484,13 +484,15 @@ func sendMail(ctx context.Context, cfg *Effective, to, subject, body string, tim
 	return nil
 }
 
-// BuildMessage renders one UTF-8 plain-text message: the subject is RFC 2047
-// base64-encoded (a subject can never inject headers), body verbatim — variable values
-// are sanitized by the mail renderer before reaching this point.
-func BuildMessage(from, to, subject, body string) []byte {
+// BuildMessage renders one UTF-8 message. Only the two body types used by the
+// application are accepted; callers cannot inject arbitrary MIME header content.
+func BuildMessage(from, to, subject, body, contentType string) []byte {
+	if contentType != "text/html" {
+		contentType = "text/plain"
+	}
 	headers := fmt.Sprintf(
-		"From: %s\r\nTo: %s\r\nSubject: =?utf-8?B?%s?=\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\nDate: %s\r\n\r\n",
-		from, to, base64.StdEncoding.EncodeToString([]byte(subject)),
+		"From: %s\r\nTo: %s\r\nSubject: =?utf-8?B?%s?=\r\nMIME-Version: 1.0\r\nContent-Type: %s; charset=utf-8\r\nDate: %s\r\n\r\n",
+		from, to, base64.StdEncoding.EncodeToString([]byte(subject)), contentType,
 		time.Now().UTC().Format("Mon, 02 Jan 2006 15:04:05 -0700"),
 	)
 	return []byte(headers + body + "\r\n")
