@@ -356,6 +356,20 @@ section.lab-reveal.is-settled .offer-face--back{display:none}
 
 /* 窄屏：插画位收起来，落款改左对齐 */
 @media only screen and (max-width:767px){
+.offer-letter__title-cn{font-size:clamp(20px,5.8vw,28px);letter-spacing:0;white-space:nowrap}
+.offer-letter__title-en{display:none}
+.offer-letter__hero{padding:12px 14px}
+.offer-letter__congrats{padding:10px 14px;gap:8px}
+.offer-letter__congrats-text{font-size:14px;line-height:1.4}
+.offer-letter__grid{gap:8px}
+.offer-letter__card{padding:10px}
+.offer-letter__card--art{min-height:150px}
+.offer-letter__invite{padding:10px 14px;gap:10px}
+.offer-letter__invite p{line-height:1.45}
+.offer-letter__confirm{padding:12px;gap:10px}
+.offer-letter__notice{padding:10px 12px}
+.offer-letter__notice p{line-height:1.5}
+.offer-letter__foot{padding:10px 14px}
 .offer-letter__hero{grid-template-columns:minmax(0,1fr)}
 .offer-letter__hero-art{display:none}
 .offer-letter__foot{grid-template-columns:minmax(0,1fr)}
@@ -979,8 +993,7 @@ section.lab-reveal.is-settled .offer-face--back{display:none}
         <span class="offer-letter__fill" aria-hidden="true"><svg class="shape-overlays" viewBox="0 0 100 100" preserveAspectRatio="none"><path class="shape-overlays__path _1"></path><path class="shape-overlays__path _2"></path><path class="shape-overlays__path _3"></path></svg></span>
         <div class="offer-letter__hero-copy">
           <h2 class="offer-letter__title">
-            <span class="offer-letter__title-cn">录取通知</span>
-            <span class="offer-letter__title-en">Offer Letter</span>
+            <span class="offer-letter__title-cn">你有一份来自创新实验室的offer~</span>
           </h2>
           <span class="offer-letter__rule" aria-hidden="true"></span>
           <p class="offer-letter__to">致：<span class="offer-letter__name" data-offer-field="name">XXX</span>同学</p>
@@ -996,7 +1009,7 @@ section.lab-reveal.is-settled .offer-face--back{display:none}
       <!-- ② 黄色祝贺条 -->
       <div class="offer-letter__congrats">
         <span class="offer-letter__fill" aria-hidden="true"><svg class="shape-overlays" viewBox="0 0 100 100" preserveAspectRatio="none"><path class="shape-overlays__path _1"></path><path class="shape-overlays__path _2"></path><path class="shape-overlays__path _3"></path></svg></span>
-        <p class="offer-letter__congrats-text">恭喜你通过面试选拔，<br />已被成功录取，欢迎加入创新实验室<span class="offer-letter__dir" data-offer-field="track">XX 方向</span>！</p>
+        <p class="offer-letter__congrats-text">恭喜你通过面试选拔，<br />已被成功录取，欢迎加入<!-- data-offer-field="track" 已废弃：保留占位以兼容旧数据 --> <span class="offer-letter__dir" data-offer-field="track">XX 方向</span>！</p>
         <span class="offer-letter__mail" aria-hidden="true">
           <svg viewBox="0 0 96 72"><rect x="6" y="14" width="84" height="52" rx="9" fill="#fff" stroke="#0f6be0" stroke-width="5"/><path d="M9 19l39 25 39-25" fill="none" stroke="#0f6be0" stroke-width="5" stroke-linejoin="round"/><path d="M75 6v11M69.5 11.5h11" stroke="#0f6be0" stroke-width="5" stroke-linecap="round"/></svg>
         </span>

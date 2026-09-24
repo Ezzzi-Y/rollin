@@ -42,16 +42,16 @@
        ?token=demo-dev（待确认）· demo-accepted · demo-declined · demo-expired · demo-inactive */
   var API_BASE = "";   // 例："https://t.example.edu.cn"，同源部署留空即可
   var DEMO_OFFERS = {
-    "demo-dev":      { candidateName: "林知远", expiresAt: "2026-09-30", activityTitle: "软件开发", effectiveStatus: "PENDING", actionable: true },
-    "demo-algo":     { candidateName: "林知远", expiresAt: "2026-09-30", activityTitle: "算法竞赛", effectiveStatus: "PENDING", actionable: true },
-    "demo-sec":      { candidateName: "林知远", expiresAt: "2026-09-30", activityTitle: "网络安全", effectiveStatus: "PENDING", actionable: true },
-    "demo-ai":       { candidateName: "林知远", expiresAt: "2026-09-30", activityTitle: "人工智能", effectiveStatus: "PENDING", actionable: true },
-    "demo-vr":       { candidateName: "林知远", expiresAt: "2026-09-30", activityTitle: "虚拟现实", effectiveStatus: "PENDING", actionable: true },
-    "demo-accepted": { candidateName: "林知远", expiresAt: "2026-09-30", activityTitle: "软件开发", effectiveStatus: "ACCEPTED", actionable: false,
+    "demo-dev":      { candidateName: "林知远", expiresAt: "2026-09-30T23:59:59+08:00", activityTitle: "软件开发", effectiveStatus: "PENDING", actionable: true },
+    "demo-algo":     { candidateName: "林知远", expiresAt: "2026-09-30T23:59:59+08:00", activityTitle: "算法竞赛", effectiveStatus: "PENDING", actionable: true },
+    "demo-sec":      { candidateName: "林知远", expiresAt: "2026-09-30T23:59:59+08:00", activityTitle: "网络安全", effectiveStatus: "PENDING", actionable: true },
+    "demo-ai":       { candidateName: "林知远", expiresAt: "2026-09-30T23:59:59+08:00", activityTitle: "人工智能", effectiveStatus: "PENDING", actionable: true },
+    "demo-vr":       { candidateName: "林知远", expiresAt: "2026-09-30T23:59:59+08:00", activityTitle: "虚拟现实", effectiveStatus: "PENDING", actionable: true },
+    "demo-accepted": { candidateName: "林知远", expiresAt: "2026-09-30T23:59:59+08:00", activityTitle: "软件开发", effectiveStatus: "ACCEPTED", actionable: false,
                        successMessage: "欢迎加入软件开发方向，第一次例会的时间会在群里公布。" },
-    "demo-declined": { candidateName: "林知远", expiresAt: "2026-09-30", activityTitle: "软件开发", effectiveStatus: "DECLINED", actionable: false },
-    "demo-expired":  { candidateName: "林知远", expiresAt: "2026-09-30", activityTitle: "软件开发", effectiveStatus: "EXPIRED", actionable: false },
-    "demo-inactive": { candidateName: "林知远", expiresAt: "2026-09-30", activityTitle: "软件开发", effectiveStatus: "INACTIVE", actionable: false }
+    "demo-declined": { candidateName: "林知远", expiresAt: "2026-09-30T23:59:59+08:00", activityTitle: "软件开发", effectiveStatus: "DECLINED", actionable: false },
+    "demo-expired":  { candidateName: "林知远", expiresAt: "2026-09-30T23:59:59+08:00", activityTitle: "软件开发", effectiveStatus: "EXPIRED", actionable: false },
+    "demo-inactive": { candidateName: "林知远", expiresAt: "2026-09-30T23:59:59+08:00", activityTitle: "软件开发", effectiveStatus: "INACTIVE", actionable: false }
   };
 
   var offerToken = (function(){
@@ -64,6 +64,12 @@
     var d = value ? new Date(value) : new Date();
     if(isNaN(d.getTime())) d = new Date();
     return d.getFullYear() + " 年 " + (d.getMonth() + 1) + " 月 " + d.getDate() + " 日";
+  }
+  function fmtDeadline(value){   // RFC3339 → "2026 年 9 月 30 日 23:59"（本地时区）
+    var d = value ? new Date(value) : new Date();
+    if(isNaN(d.getTime())) d = new Date();
+    function pad(n){ return String(n).padStart(2, "0"); }
+    return fmtDay(value) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
   }
   function setField(field, value){
     if(value === undefined || value === null || value === "") return;
@@ -78,7 +84,7 @@
     var activity = data.activity && data.activity.title;
     setField("track", dir || activity || data.activityTitle || data.track);
     /* 截止日期：后端给的是 RFC3339（UTC），这里按本地时区显示成年月日 */
-    setField("deadline", data.expiresAt ? fmtDay(data.expiresAt) : data.deadline);
+    setField("deadline", data.expiresAt ? fmtDeadline(data.expiresAt) : data.deadline);
   }
   /* 落款日期跟后端无关，永远取当天 */
   setField("date", fmtDay());
