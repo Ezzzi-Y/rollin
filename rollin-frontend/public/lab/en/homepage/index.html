@@ -189,7 +189,7 @@ section.lab-reveal.is-settled .offer-face--back{display:none}
 /* 框里的内容都要抬到液体层上面（z-index:0 的定位元素会盖住普通文字） */
 .offer-letter__hero-copy,.offer-letter__hero-art,.offer-letter__congrats-text,.offer-letter__mail,
 .offer-letter__block-title,.offer-letter__info,.offer-letter__invite>p,.offer-letter__cap,
-.offer-letter__confirm-main,.offer-letter__notice,.offer-letter__foot-q,.offer-letter__sign,
+.offer-letter__confirm-main,.offer-letter__notice,.offer-letter__foot-copy,.offer-letter__foot-q,.offer-letter__foot-message,.offer-letter__sign,
 .offer-letter__row,.offer-letter__notice-ico,.offer-letter__notice-body{position:relative;z-index:1}
 /* 系统开了「减少动态效果」时不放波浪，直接补色 */
 @media (prefers-reduced-motion:reduce){
@@ -345,7 +345,9 @@ section.lab-reveal.is-settled .offer-face--back{display:none}
 .offer-letter__foot{--ol-line:#5f9fdd;--ol-fill:var(--ol-sky);
   position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:clamp(10px,1.5vw,20px);
   border:2px solid var(--ol-line);border-radius:clamp(12px,1.4vw,18px);padding:clamp(12px,1.45vw,20px) clamp(14px,1.7vw,24px)}
+.offer-letter__foot-copy{display:grid;gap:clamp(8px,1vw,12px);min-width:0}
 .offer-letter__foot-q{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:clamp(10px,1.2vw,16px);margin:0;color:#132a4d;font-weight:600}
+.offer-letter__foot-message{margin:0;color:#132a4d;font-weight:600;line-height:1.5}
 .offer-letter__foot-ico{display:grid;place-items:center;width:clamp(26px,2.6vw,38px);aspect-ratio:1;border-radius:50%;background:#0f6be0;flex:0 0 auto}
 .offer-letter__foot-ico svg{display:block;width:58%;height:58%}
 .offer-letter__sign{display:grid;gap:2px;margin:0;color:#132a4d;font-size:.98em;font-weight:700;text-align:right;justify-self:end}
@@ -1014,50 +1016,7 @@ section.lab-reveal.is-settled .offer-face--back{display:none}
         </span>
       </div>
 
-      <!-- ③ 录取信息 + 配图 -->
-      <div class="offer-letter__grid">
-        <div class="offer-letter__card offer-letter__card--green">
-          <span class="offer-letter__fill" aria-hidden="true"><svg class="shape-overlays" viewBox="0 0 100 100" preserveAspectRatio="none"><path class="shape-overlays__path _1"></path><path class="shape-overlays__path _2"></path><path class="shape-overlays__path _3"></path></svg></span>
-          <h3 class="offer-letter__block-title">
-            <span class="offer-letter__dot" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4.2" fill="#fff"/><path d="M4.3 20.8c.5-4 3.8-6.3 7.7-6.3s7.2 2.3 7.7 6.3z" fill="#fff"/></svg></span>
-            录取信息
-          </h3>
-          <div class="offer-letter__info">
-            <span class="offer-letter__fill" aria-hidden="true"><svg class="shape-overlays" viewBox="0 0 100 100" preserveAspectRatio="none"><path class="shape-overlays__path _1"></path><path class="shape-overlays__path _2"></path><path class="shape-overlays__path _3"></path></svg></span>
-            <div class="offer-letter__row">
-              <span class="offer-letter__ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4.2" fill="#fff"/><path d="M4.3 20.8c.5-4 3.8-6.3 7.7-6.3s7.2 2.3 7.7 6.3z" fill="#fff"/></svg></span>
-              <span class="offer-letter__field">
-                <span class="offer-letter__label">录取人：</span>
-                <span class="offer-letter__value" data-offer-field="name">XXX 同学</span>
-              </span>
-            </div>
-            <div class="offer-letter__row">
-              <span class="offer-letter__ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6" fill="none" stroke="#fff" stroke-width="2.4"/><circle cx="12" cy="12" r="3.8" fill="#fff"/></svg></span>
-              <span class="offer-letter__field">
-                <span class="offer-letter__label">录取方向：</span>
-                <span class="offer-letter__value offer-letter__value--chip" data-offer-field="track">XX 方向</span>
-              </span>
-            </div>
-          </div>
-          <!-- 接口报错（限流/网络/未知）时在这里提示一句，不动卡片状态 -->
-          <p class="offer-letter__confirm-hint" data-offer-hint></p>
-        </div>
-        <!-- 配图位（设计稿里是"三个同学围着电脑 + 白板流程"）：
-             先用现成的 lab-living-2.png 顶上，换图时改这一行 src。 -->
-        <div class="offer-letter__card offer-letter__card--art">
-          <span class="offer-letter__fill" aria-hidden="true"><svg class="shape-overlays" viewBox="0 0 100 100" preserveAspectRatio="none"><path class="shape-overlays__path _1"></path><path class="shape-overlays__path _2"></path><path class="shape-overlays__path _3"></path></svg></span>
-          <img src="../../wp-content/uploads/2026/09/lab-living-2.png" alt="" width="1536" height="1024" decoding="async" />
-        </div>
-      </div>
-
-      <!-- ④ 紫色寄语 -->
-      <div class="offer-letter__invite">
-        <span class="offer-letter__fill" aria-hidden="true"><svg class="shape-overlays" viewBox="0 0 100 100" preserveAspectRatio="none"><path class="shape-overlays__path _1"></path><path class="shape-overlays__path _2"></path><path class="shape-overlays__path _3"></path></svg></span>
-        <span class="offer-letter__cap" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.6l10.4 4.6L12 12.8 1.6 8.2z" fill="#fff"/><path d="M5.8 11.4v4.4c0 1.6 2.8 2.8 6.2 2.8s6.2-1.2 6.2-2.8v-4.4" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round"/></svg></span>
-        <p>再次恭喜你进入实验室，在这里享受更加浓郁的学习交流氛围，<br />更加便捷的学习环境，与实验室的大家一起参与项目合作，共同学习进步。</p>
-      </div>
-
-      <!-- ⑤ 橙色确认接受 -->
+      <!-- ③ 橙色确认接受 -->
       <div class="offer-letter__confirm">
         <span class="offer-letter__fill" aria-hidden="true"><svg class="shape-overlays" viewBox="0 0 100 100" preserveAspectRatio="none"><path class="shape-overlays__path _1"></path><path class="shape-overlays__path _2"></path><path class="shape-overlays__path _3"></path></svg></span>
         <div class="offer-letter__confirm-main">
@@ -1103,20 +1062,23 @@ section.lab-reveal.is-settled .offer-face--back{display:none}
         </div>
       </div>
 
-      <!-- ⑥ 蓝色疑问 / 落款 -->
+      <!-- ④ 蓝色联系、寄语 / 落款 -->
       <div class="offer-letter__foot">
         <span class="offer-letter__fill" aria-hidden="true"><svg class="shape-overlays" viewBox="0 0 100 100" preserveAspectRatio="none"><path class="shape-overlays__path _1"></path><path class="shape-overlays__path _2"></path><path class="shape-overlays__path _3"></path></svg></span>
-        <p class="offer-letter__foot-q">
-          <span class="offer-letter__foot-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2.6" y="5" width="18.8" height="14" rx="2.6" fill="none" stroke="#fff" stroke-width="2.2"/><path d="M3.8 6.8l8.2 5.8 8.2-5.8" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/></svg></span>
-          如有疑问，请联系对应方向的招新负责人
-        </p>
+        <div class="offer-letter__foot-copy">
+          <p class="offer-letter__foot-q">
+            <span class="offer-letter__foot-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2.6" y="5" width="18.8" height="14" rx="2.6" fill="none" stroke="#fff" stroke-width="2.2"/><path d="M3.8 6.8l8.2 5.8 8.2-5.8" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/></svg></span>
+            如有疑问，请联系对应方向的招新负责人
+          </p>
+          <p class="offer-letter__foot-message">再次恭喜你进入实验室，在这里享受更加浓郁的学习交流氛围，更加便捷的学习环境，与实验室的大家一起参与项目合作，共同学习进步。</p>
+        </div>
         <p class="offer-letter__sign">
           <span>创新实验室</span>
           <span data-offer-field="date">XXXX 年 XX 月 XX 日</span>
         </p>
       </div>
 
-      <!-- ⑦ 底部波浪 -->
+      <!-- ⑤ 底部波浪 -->
       <div class="offer-letter__wave" aria-hidden="true">
         <svg viewBox="0 0 1200 110" preserveAspectRatio="none">
           <path d="M0 30c170 46 330 68 600 68s430-22 600-68v80H0z" fill="#0072e3"/>
