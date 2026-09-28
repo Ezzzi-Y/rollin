@@ -93,9 +93,9 @@ func (s *Server) memberInviteHandler(w http.ResponseWriter, r *http.Request, rol
 	var invited *member.Invited
 	var err error
 	if role == model.MemberRoleOwner {
-		invited, err = s.deps.Member.InviteOwner(r.Context(), principal.ID, activityID, body.Name, body.Email)
+		invited, err = s.deps.Member.InviteOwner(r.Context(), principal.ID, activityID, body.Name, body.Email, principal.IsPlatform())
 	} else {
-		invited, err = s.deps.Member.InviteAdmin(r.Context(), principal.ID, activityID, body.Name, body.Email)
+		invited, err = s.deps.Member.InviteAdmin(r.Context(), principal.ID, activityID, body.Name, body.Email, principal.IsPlatform())
 	}
 	if err != nil {
 		writeError(w, r, err)
@@ -134,7 +134,7 @@ func (s *Server) memberResendHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	principal, _ := principalFrom(r.Context())
-	invited, err := s.deps.Member.ResendInvitation(r.Context(), principal.ID, activityID, userID)
+	invited, err := s.deps.Member.ResendInvitation(r.Context(), principal.ID, activityID, userID, principal.IsPlatform())
 	if err != nil {
 		writeError(w, r, err)
 		return

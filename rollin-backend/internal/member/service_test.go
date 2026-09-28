@@ -89,7 +89,7 @@ func TestInviteOwnerRequiresPlatformSMTP(t *testing.T) {
 	f := newFixture(t)
 	f.seedActivity(t)
 
-	invited, err := f.svc.InviteOwner(context.Background(), 1, 1, "李负责", "Li@Example.edu.cn ")
+	invited, err := f.svc.InviteOwner(context.Background(), 1, 1, "李负责", "Li@Example.edu.cn ", true)
 	if !errs.Is(err, errs.CodeSMTPNotConfigured) {
 		t.Fatalf("InviteOwner err = %v, want SMTP_NOT_CONFIGURED", err)
 	}
@@ -114,7 +114,7 @@ func TestInviteOwnerHappyPath(t *testing.T) {
 	f.seedActivity(t)
 	f.seedVerifiedSMTP(t, model.ScopePlatform, 0)
 
-	invited, err := f.svc.InviteOwner(context.Background(), 1, 1, "李负责", "li@example.edu.cn")
+	invited, err := f.svc.InviteOwner(context.Background(), 1, 1, "李负责", "li@example.edu.cn", true)
 	if err != nil {
 		t.Fatalf("InviteOwner: %v", err)
 	}
@@ -128,12 +128,27 @@ func TestInviteOwnerHappyPath(t *testing.T) {
 	if user.Status != model.UserInvited || user.ActivityID != 1 {
 		t.Fatalf("user state = %+v", user)
 	}
+	// The platform actor is a platform_admin row, not a user — the user-table
+	// references must stay NULL (fk_user_invited_by rejects a platform_admin id).
+	if user.InvitedByUserID != nil {
+		t.Fatalf("platform invite must leave invited_by_user_id NULL, got %d", *user.InvitedByUserID)
+	}
 	var memberRow model.ActivityMember
 	if err := f.db.First(&memberRow, invited.MemberID).Error; err != nil {
 		t.Fatalf("member: %v", err)
 	}
 	if memberRow.Role != model.MemberRoleOwner || memberRow.Status != model.MemberActive {
 		t.Fatalf("member state = %+v", memberRow)
+	}
+	if memberRow.InvitedByUserID != nil {
+		t.Fatalf("platform invite must leave member invited_by_user_id NULL, got %d", *memberRow.InvitedByUserID)
+	}
+	var tokenRow model.InviteToken
+	if err := f.db.First(&tokenRow, invited.InviteTokenID).Error; err != nil {
+		t.Fatalf("invite token: %v", err)
+	}
+	if tokenRow.CreatedByUserID != nil {
+		t.Fatalf("platform invite must leave created_by_user_id NULL, got %d", *tokenRow.CreatedByUserID)
 	}
 	var task model.MailTask
 	if err := f.db.Where("invite_token_id = ?", invited.InviteTokenID).First(&task).Error; err != nil {
@@ -162,10 +177,10 @@ func TestInviteOwnerSecondOwnerRejected(t *testing.T) {
 	f.seedActivity(t)
 	f.seedVerifiedSMTP(t, model.ScopePlatform, 0)
 
-	if _, err := f.svc.InviteOwner(context.Background(), 1, 1, "李负责", "li@example.edu.cn"); err != nil {
+	if _, err := f.svc.InviteOwner(context.Background(), 1, 1, "李负责", "li@example.edu.cn", true); err != nil {
 		t.Fatalf("first InviteOwner: %v", err)
 	}
-	_, err := f.svc.InviteOwner(context.Background(), 1, 1, "王负责", "wang@example.edu.cn")
+	_, err := f.svc.InviteOwner(context.Background(), 1, 1, "王负责", "wang@example.edu.cn", true)
 	if !errs.Is(err, errs.CodeEmailTaken) {
 		t.Fatalf("second InviteOwner err = %v, want EMAIL_TAKEN", err)
 	}
@@ -178,7 +193,7 @@ func TestInviteAdminWithoutSMTPCommitsMember(t *testing.T) {
 	f := newFixture(t)
 	f.seedActivity(t)
 
-	invited, err := f.svc.InviteAdmin(context.Background(), 7, 1, "王同学", "wang@example.edu.cn")
+	invited, err := f.svc.InviteAdmin(context.Background(), 7, 1, "王同学", "wang@example.edu.cn", false)
 	if err != nil {
 		t.Fatalf("InviteAdmin: %v", err)
 	}
@@ -195,8 +210,19 @@ func TestInviteAdminWithoutSMTPCommitsMember(t *testing.T) {
 	if tokenRow.Status != model.InviteTokenPending {
 		t.Fatalf("token status = %s", tokenRow.Status)
 	}
+	// The OWNER actor (user 7) is a real user row — his id is recorded as the inviter.
+	var userRow model.User
+	if err := f.db.First(&userRow, invited.UserID).Error; err != nil {
+		t.Fatalf("user: %v", err)
+	}
+	if userRow.InvitedByUserID == nil || *userRow.InvitedByUserID != 7 {
+		t.Fatalf("invited_by_user_id = %+v, want 7", userRow.InvitedByUserID)
+	}
+	if tokenRow.CreatedByUserID == nil || *tokenRow.CreatedByUserID != 7 {
+		t.Fatalf("created_by_user_id = %+v, want 7", tokenRow.CreatedByUserID)
+	}
 	// Duplicate member creation is refused.
-	_, err = f.svc.InviteAdmin(context.Background(), 7, 1, "王同学", "wang@example.edu.cn")
+	_, err = f.svc.InviteAdmin(context.Background(), 7, 1, "王同学", "wang@example.edu.cn", false)
 	if !errs.Is(err, errs.CodeMemberExists) {
 		t.Fatalf("duplicate InviteAdmin err = %v, want MEMBER_EXISTS", err)
 	}
@@ -210,11 +236,11 @@ func TestResendSupersedesOldToken(t *testing.T) {
 	f.seedActivity(t)
 	f.seedVerifiedSMTP(t, model.ScopeActivity, 1)
 
-	first, err := f.svc.InviteAdmin(context.Background(), 7, 1, "王同学", "wang@example.edu.cn")
+	first, err := f.svc.InviteAdmin(context.Background(), 7, 1, "王同学", "wang@example.edu.cn", false)
 	if err != nil || !first.MailQueued {
 		t.Fatalf("InviteAdmin: %v queued=%v", err, first != nil && first.MailQueued)
 	}
-	second, err := f.svc.ResendInvitation(context.Background(), 7, 1, first.UserID)
+	second, err := f.svc.ResendInvitation(context.Background(), 7, 1, first.UserID, false)
 	if err != nil {
 		t.Fatalf("ResendInvitation: %v", err)
 	}
@@ -266,7 +292,7 @@ func TestAcceptInvitationLifecycle(t *testing.T) {
 	f.seedActivity(t)
 	f.seedVerifiedSMTP(t, model.ScopeActivity, 1)
 
-	invited, err := f.svc.InviteAdmin(context.Background(), 7, 1, "王同学", "wang@example.edu.cn")
+	invited, err := f.svc.InviteAdmin(context.Background(), 7, 1, "王同学", "wang@example.edu.cn", false)
 	if err != nil {
 		t.Fatalf("InviteAdmin: %v", err)
 	}
@@ -320,7 +346,7 @@ func TestAcceptInvitationExpired(t *testing.T) {
 	activity := f.seedActivity(t)
 	f.seedVerifiedSMTP(t, model.ScopeActivity, activity.ID)
 
-	invited, err := f.svc.InviteAdmin(context.Background(), 7, activity.ID, "王同学", "wang@example.edu.cn")
+	invited, err := f.svc.InviteAdmin(context.Background(), 7, activity.ID, "王同学", "wang@example.edu.cn", false)
 	if err != nil {
 		t.Fatalf("InviteAdmin: %v", err)
 	}
@@ -360,7 +386,7 @@ func TestDisableMemberRevokesInvitationAndBlocksLogin(t *testing.T) {
 	activity := f.seedActivity(t)
 	f.seedVerifiedSMTP(t, model.ScopeActivity, activity.ID)
 
-	invited, err := f.svc.InviteAdmin(context.Background(), 7, activity.ID, "王同学", "wang@example.edu.cn")
+	invited, err := f.svc.InviteAdmin(context.Background(), 7, activity.ID, "王同学", "wang@example.edu.cn", false)
 	if err != nil {
 		t.Fatalf("InviteAdmin: %v", err)
 	}
@@ -400,7 +426,7 @@ func TestListMembers(t *testing.T) {
 	f := newFixture(t)
 	activity := f.seedActivity(t)
 	f.seedVerifiedSMTP(t, model.ScopeActivity, activity.ID)
-	if _, err := f.svc.InviteAdmin(context.Background(), 7, activity.ID, "王同学", "wang@example.edu.cn"); err != nil {
+	if _, err := f.svc.InviteAdmin(context.Background(), 7, activity.ID, "王同学", "wang@example.edu.cn", false); err != nil {
 		t.Fatalf("InviteAdmin: %v", err)
 	}
 	rows, total, err := f.svc.ListMembers(context.Background(), activity.ID, 1, 20)

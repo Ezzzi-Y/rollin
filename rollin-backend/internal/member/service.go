@@ -78,14 +78,14 @@ type Service interface {
 	// member row, revoking older tokens and queueing the invitation mail via the
 	// PLATFORM SMTP (missing/unverified SMTP → SMTP_NOT_CONFIGURED, transaction rolled
 	// back, 04 §3.4).
-	InviteOwner(ctx context.Context, actorID, activityID uint64, name, email string) (*Invited, error)
+	InviteOwner(ctx context.Context, actorID, activityID uint64, name, email string, callerIsPlatform bool) (*Invited, error)
 	// InviteAdmin is the OWNER path with the ACTIVITY SMTP. Same-activity duplicate
 	// members are refused (EMAIL_TAKEN/MEMBER_EXISTS, 88.2.6).
-	InviteAdmin(ctx context.Context, actorID, activityID uint64, name, email string) (*Invited, error)
+	InviteAdmin(ctx context.Context, actorID, activityID uint64, name, email string, callerIsPlatform bool) (*Invited, error)
 	// ResendInvitation revokes the user's PENDING tokens (and their unsent mail tasks)
 	// and mints a fresh 72h one; only INVITED (password-less) users qualify — ACTIVE
 	// users conflict (04 §3.5).
-	ResendInvitation(ctx context.Context, actorID, activityID, userID uint64) (*Invited, error)
+	ResendInvitation(ctx context.Context, actorID, activityID, userID uint64, callerIsPlatform bool) (*Invited, error)
 	// DisableMember flips the member row to DISABLED inside the current activity only
 	// (88.1.7: the platform never disables the account itself) and cancels unsent mail.
 	// callerIsPlatform selects the OWNER-disable rules (03 §2.2) versus the OWNER
@@ -138,19 +138,22 @@ func (s *service) ResolveActivityRole(ctx context.Context, activityID, userID ui
 }
 
 // InviteOwner implements the platform OWNER invitation (04 §3.4).
-func (s *service) InviteOwner(ctx context.Context, actorID, activityID uint64, name, email string) (*Invited, error) {
-	return s.invite(ctx, actorID, activityID, name, email, model.MemberRoleOwner)
+func (s *service) InviteOwner(ctx context.Context, actorID, activityID uint64, name, email string, callerIsPlatform bool) (*Invited, error) {
+	return s.invite(ctx, actorID, activityID, name, email, model.MemberRoleOwner, callerIsPlatform)
 }
 
 // InviteAdmin implements the OWNER ADMIN invitation (04 §5.11).
-func (s *service) InviteAdmin(ctx context.Context, actorID, activityID uint64, name, email string) (*Invited, error) {
-	return s.invite(ctx, actorID, activityID, name, email, model.MemberRoleAdmin)
+func (s *service) InviteAdmin(ctx context.Context, actorID, activityID uint64, name, email string, callerIsPlatform bool) (*Invited, error) {
+	return s.invite(ctx, actorID, activityID, name, email, model.MemberRoleAdmin, callerIsPlatform)
 }
 
 // invite is the shared single transaction for both roles:
 // find-or-create user → resolve the member slot → supersede old tokens → mint a fresh
-// 72h token → queue the INVITE MailTask → audit.
-func (s *service) invite(ctx context.Context, actorID, activityID uint64, name, email, role string) (*Invited, error) {
+// 72h token → queue the INVITE MailTask → audit. callerIsPlatform distinguishes the
+// platform super admin (a platform_admin row, never a user row) from the activity-scoped
+// OWNER so invited_by_user_id/created_by_user_id — user-table references (05-data-model
+// §2/§11) — stay NULL for platform invitations instead of storing a platform_admin id.
+func (s *service) invite(ctx context.Context, actorID, activityID uint64, name, email, role string, callerIsPlatform bool) (*Invited, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || utf8.RuneCountInString(name) > 100 {
 		return nil, errs.Validation("姓名必填且不超过 100 字")
@@ -158,6 +161,11 @@ func (s *service) invite(ctx context.Context, actorID, activityID uint64, name, 
 	email = validate.NormalizeEmail(email)
 	if err := validate.ValidateEmail(email); err != nil {
 		return nil, errs.Validation(err.Error())
+	}
+
+	var invitedBy *uint64
+	if !callerIsPlatform {
+		invitedBy = &actorID
 	}
 
 	var result *Invited
@@ -174,7 +182,7 @@ func (s *service) invite(ctx context.Context, actorID, activityID uint64, name, 
 				Name:            name,
 				Email:           email,
 				Status:          model.UserInvited,
-				InvitedByUserID: &actorID,
+				InvitedByUserID: invitedBy,
 			}
 			if err := repo.InsertUser(ctx, tx, user); err != nil {
 				return err
@@ -184,7 +192,7 @@ func (s *service) invite(ctx context.Context, actorID, activityID uint64, name, 
 		}
 
 		// ② Resolve or create the member slot (每活动一个 OWNER 由生成列唯一键兜底).
-		if err := s.upsertMemberSlot(ctx, tx, repo, activityID, user.ID, role, actorID); err != nil {
+		if err := s.upsertMemberSlot(ctx, tx, repo, activityID, user.ID, role, invitedBy); err != nil {
 			return err
 		}
 		memberRow, err := repo.MemberByActivityAndUser(ctx, tx, activityID, user.ID)
@@ -210,7 +218,7 @@ func (s *service) invite(ctx context.Context, actorID, activityID uint64, name, 
 			TokenHash:       hash,
 			Status:          model.InviteTokenPending,
 			ExpiresAt:       expires,
-			CreatedByUserID: &actorID,
+			CreatedByUserID: invitedBy,
 		}
 		if err := repo.InsertInviteToken(ctx, tx, inviteRow); err != nil {
 			return err
@@ -259,8 +267,9 @@ func (s *service) mintToken(ctx context.Context, activityID, userID uint64, role
 }
 
 // upsertMemberSlot materializes the (activity, user) membership with the role rules of
-// 04 §3.4 (one OWNER per activity) and §5.11 (no duplicate effective members).
-func (s *service) upsertMemberSlot(ctx context.Context, tx *gorm.DB, repo Repository, activityID, userID uint64, role string, actorID uint64) error {
+// 04 §3.4 (one OWNER per activity) and §5.11 (no duplicate effective members). invitedBy
+// is nil when the actor is the platform super admin (not a user row).
+func (s *service) upsertMemberSlot(ctx context.Context, tx *gorm.DB, repo Repository, activityID, userID uint64, role string, invitedBy *uint64) error {
 	existing, err := repo.MemberByActivityAndUser(ctx, tx, activityID, userID)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
@@ -279,7 +288,7 @@ func (s *service) upsertMemberSlot(ctx context.Context, tx *gorm.DB, repo Reposi
 				// (deviation documented in 08 notes §8 — the generated-column unique key
 				// admits exactly one OWNER row per activity forever).
 				return repo.UpdateMemberColumns(ctx, tx, ownerRow.ID, map[string]any{
-					"user_id": userID, "status": model.MemberActive, "invited_by_user_id": actorID,
+					"user_id": userID, "status": model.MemberActive, "invited_by_user_id": invitedBy,
 				})
 			}
 		}
@@ -288,7 +297,7 @@ func (s *service) upsertMemberSlot(ctx context.Context, tx *gorm.DB, repo Reposi
 			UserID:          userID,
 			Role:            role,
 			Status:          model.MemberActive,
-			InvitedByUserID: &actorID,
+			InvitedByUserID: invitedBy,
 		})
 	case err != nil:
 		return err
@@ -429,7 +438,11 @@ func (s *service) auditInvite(ctx context.Context, tx *gorm.DB, actorID uint64, 
 }
 
 // ResendInvitation mints a fresh token for a still-INVITED user (04 §3.5/§5.11).
-func (s *service) ResendInvitation(ctx context.Context, actorID, activityID, userID uint64) (*Invited, error) {
+func (s *service) ResendInvitation(ctx context.Context, actorID, activityID, userID uint64, callerIsPlatform bool) (*Invited, error) {
+	var invitedBy *uint64
+	if !callerIsPlatform {
+		invitedBy = &actorID
+	}
 	var result *Invited
 	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		repo := s.repo.WithTx(tx)
@@ -462,7 +475,7 @@ func (s *service) ResendInvitation(ctx context.Context, actorID, activityID, use
 			TokenHash:       hash,
 			Status:          model.InviteTokenPending,
 			ExpiresAt:       expires,
-			CreatedByUserID: &actorID,
+			CreatedByUserID: invitedBy,
 		}
 		if err := repo.InsertInviteToken(ctx, tx, inviteRow); err != nil {
 			return err
