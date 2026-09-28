@@ -106,6 +106,7 @@
     if(result) result.textContent = message || (kind === "accept" ? "已接受，欢迎加入创新实验室！" : "已放弃本次录取资格。");
     if(kind === "decline") setupDeclineFeedback(data || {});
     if(kind === "accept"){
+      if(letter) letter.classList.add("is-accepted-state");
       fillAllBoxes();
     } else if(letter){
       letter.classList.add("is-muted");    // 放弃：整卡变灰
