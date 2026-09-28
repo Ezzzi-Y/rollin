@@ -1,0 +1,7 @@
+{{inviteeName}}，你好：
+
+你被邀请担任活动「{{activityTitle}}」的管理员。请在 {{expiresAt}} 前打开以下链接设置密码并激活账户：
+
+{{inviteUrl}}
+
+{{siteName}}
