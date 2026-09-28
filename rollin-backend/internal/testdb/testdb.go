@@ -93,6 +93,7 @@ CREATE TABLE offer (
   source TEXT NOT NULL DEFAULT 'AUTO',
   batch_id INTEGER,
   reason TEXT,
+  decline_reason TEXT, decline_reason_at DATETIME, decline_source TEXT NOT NULL DEFAULT '',
   created_by_user_id INTEGER,
   expires_at DATETIME NOT NULL,
   sent_at DATETIME, accepted_at DATETIME, declined_at DATETIME, expired_at DATETIME,

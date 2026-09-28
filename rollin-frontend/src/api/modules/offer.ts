@@ -39,6 +39,8 @@ export const publicOfferSchema = z.object({
   serverTime: rfc3339.nullish(),
   /** 仅 ACCEPTED 附带（活动自定义的成功提示文案） */
   successMessage: z.string().nullish(),
+  declineSource: z.enum(['', 'CANDIDATE', 'CROSS_ACTIVITY', 'SYSTEM']).optional(),
+  declineReasonSubmitted: z.boolean().optional(),
 })
 
 /** POST accept / decline 响应（契约 §7.2 / §7.3；幂等重复提交返回既有终态） */
@@ -49,6 +51,8 @@ export const offerActionSchema = z.object({
   successMessage: z.string().nullish(),
   acceptedAt: rfc3339.nullish(),
   declinedAt: rfc3339.nullish(),
+  declineSource: z.enum(['', 'CANDIDATE', 'CROSS_ACTIVITY', 'SYSTEM']).optional(),
+  declineReasonSubmitted: z.boolean().optional(),
 })
 
 export type PublicOffer = z.infer<typeof publicOfferSchema>
@@ -89,6 +93,15 @@ export async function declineOffer(token: string): Promise<OfferActionResult> {
   const data = await http.post<unknown>(
     `/api/public/offers/${encodeURIComponent(token)}/decline`,
     undefined,
+    { skipUnauthorizedRedirect: true },
+  )
+  return parseResponse(offerActionSchema, data)
+}
+
+export async function submitDeclineReason(token: string, reason: string): Promise<OfferActionResult> {
+  const data = await http.post<unknown>(
+    `/api/public/offers/${encodeURIComponent(token)}/decline-reason`,
+    { reason },
     { skipUnauthorizedRedirect: true },
   )
   return parseResponse(offerActionSchema, data)

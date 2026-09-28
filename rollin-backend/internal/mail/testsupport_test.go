@@ -59,6 +59,7 @@ CREATE TABLE application (
 CREATE TABLE offer (
   id INTEGER PRIMARY KEY AUTOINCREMENT, application_id INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'PENDING', source TEXT NOT NULL DEFAULT 'AUTO', batch_id INTEGER, reason TEXT,
+  decline_reason TEXT, decline_reason_at DATETIME, decline_source TEXT NOT NULL DEFAULT '',
   created_by_user_id INTEGER, expires_at DATETIME NOT NULL,
   sent_at DATETIME, accepted_at DATETIME, declined_at DATETIME, expired_at DATETIME,
   created_at DATETIME, updated_at DATETIME

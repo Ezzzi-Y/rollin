@@ -34,7 +34,7 @@ const (
 	// The server refuses to start on an older database (06-migration.md §1.2).
 	// V4: BATCH offer mode (activity.offer_mode/batch_size, offer.source/batch_id,
 	// offer_batch) and audit_log.actor_candidate_id.
-	MinimumSchemaVersion = uint64(4)
+	MinimumSchemaVersion = uint64(5)
 )
 
 // Step is one ordered statement (or logical unit) inside a migration.
@@ -77,7 +77,7 @@ func (m Migration) Checksum() string {
 
 // All returns every registered migration in strict version order.
 func All() []Migration {
-	list := []Migration{v1(), v2(), v3(), v4()}
+	list := []Migration{v1(), v2(), v3(), v4(), v5()}
 	sort.Slice(list, func(i, j int) bool { return list[i].Version < list[j].Version })
 	return list
 }

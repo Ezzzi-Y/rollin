@@ -225,11 +225,6 @@ section.lab-reveal.is-settled .offer-face--back{display:none}
   position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:clamp(10px,1.5vw,20px);
   border:2px solid var(--ol-line);border-radius:clamp(12px,1.4vw,18px);padding:clamp(12px,1.45vw,20px) clamp(14px,1.7vw,24px)}
 .offer-letter__congrats-text{margin:0;font-size:clamp(14px,1.22vw,19px);font-weight:800;line-height:1.62}
-/* 方向同样来自后端（token 决定），未确认时是实线小框、填色后变白底高亮块 */
-.offer-letter__dir{display:inline-block;margin:0 .1em;padding:0 .34em;border-radius:8px;
-  border:2px solid #1b1b1b;background:none;color:#121212;font-size:clamp(17px,1.5vw,23px);font-weight:800;line-height:1.42;
-  transition:background .45s,border-color .45s}
-.offer-letter.is-filled .offer-letter__dir{border-color:rgba(255,255,255,.9);background:rgba(255,255,255,.66)}
 .offer-letter__mail{display:block;width:clamp(52px,7vw,86px)}
 .offer-letter__mail svg{display:block;width:100%;height:auto}
 
@@ -275,6 +270,12 @@ section.lab-reveal.is-settled .offer-face--back{display:none}
 .offer-letter__confirm-main.is-resolved .offer-letter__block-title{justify-content:center}
 .offer-letter__confirm-main.is-resolved .offer-letter__confirm-lead{display:none}
 .offer-letter__confirm-main.is-resolved .offer-letter__confirm-done{display:block}
+.offer-letter__decline-feedback{display:none;width:min(100%,420px);margin-top:clamp(8px,1vw,12px);padding:12px 14px;border:1px solid rgba(160,44,12,.28);border-radius:10px;background:rgba(255,255,255,.45);text-align:left}
+.offer-letter__decline-feedback.is-on{display:grid;gap:8px}
+.offer-letter__decline-feedback p{margin:0;color:#6d260f;font-size:14px;line-height:1.5}
+.offer-letter__decline-feedback textarea{width:100%;min-height:76px;resize:vertical;padding:8px 10px;border:1px solid rgba(160,44,12,.35);border-radius:7px;background:#fff;color:#22160a;font:inherit;font-size:14px;line-height:1.5}
+.offer-letter__decline-feedback button{justify-self:end;padding:7px 14px;border:0;border-radius:999px;background:#a02c0c;color:#fff;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.offer-letter__decline-feedback button:disabled{opacity:.55;cursor:not-allowed}
 .offer-letter__cta-row{display:flex;flex-wrap:wrap;align-items:center;gap:clamp(10px,1.2vw,18px)}
 /* 已经变圆的那一个留着，另一个收起来 */
 .offer-letter__cta-row.is-resolved .offer-letter__cta:not(.is-accepted):not(.is-declined){display:none}
@@ -1010,7 +1011,7 @@ section.lab-reveal.is-settled .offer-face--back{display:none}
       <!-- ② 黄色祝贺条 -->
       <div class="offer-letter__congrats">
         <span class="offer-letter__fill" aria-hidden="true"><svg class="shape-overlays" viewBox="0 0 100 100" preserveAspectRatio="none"><path class="shape-overlays__path _1"></path><path class="shape-overlays__path _2"></path><path class="shape-overlays__path _3"></path></svg></span>
-        <p class="offer-letter__congrats-text">恭喜你通过面试选拔，<br />已被成功录取，欢迎加入<!-- data-offer-field="track" 已废弃：保留占位以兼容旧数据 --> <span class="offer-letter__dir" data-offer-field="track">XX 方向</span>！</p>
+        <p class="offer-letter__congrats-text">恭喜你通过面试选拔，<br />已被成功录取，欢迎加入<!-- data-offer-field="track" 已废弃：保留占位以兼容旧数据 --> <span data-offer-field="track">XX 方向</span>！</p>
         <span class="offer-letter__mail" aria-hidden="true">
           <svg viewBox="0 0 96 72"><rect x="6" y="14" width="84" height="52" rx="9" fill="#fff" stroke="#0f6be0" stroke-width="5"/><path d="M9 19l39 25 39-25" fill="none" stroke="#0f6be0" stroke-width="5" stroke-linejoin="round"/><path d="M75 6v11M69.5 11.5h11" stroke="#0f6be0" stroke-width="5" stroke-linecap="round"/></svg>
         </span>
@@ -1027,6 +1028,11 @@ section.lab-reveal.is-settled .offer-face--back{display:none}
           <p class="offer-letter__confirm-lead">请在下方选择：接受或拒绝本次录取</p>
           <!-- 结果行：接受 / 放弃 / 过期 / 失效后由脚本填文案并显示 -->
           <p class="offer-letter__confirm-done" data-offer-result></p>
+          <div class="offer-letter__decline-feedback" data-decline-feedback>
+            <p>如果愿意，可以告诉我们放弃原因（选填）。</p>
+            <textarea data-decline-reason-input maxlength="500" placeholder="你的反馈会帮助我们改进"></textarea>
+            <button type="button" data-decline-reason-submit>提交反馈</button>
+          </div>
           <!-- 两个按钮同款（黑底 + 三层彩色波浪，跟 #sec-directions 那条一样）：
                点接受 → 缩成绿色圆形对勾；点拒绝 → 缩成红色圆形叉号。 -->
           <div class="offer-letter__cta-row">

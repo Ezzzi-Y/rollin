@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   Archive,
   CircleCheckBig,
@@ -212,11 +212,59 @@ export function AcceptedResultCard({ offer }: { offer: PublicOffer }) {
 }
 
 /** 已放弃：明确不可自行恢复的指引 */
-export function DeclinedResultCard({ offer }: { offer: PublicOffer }) {
+export function DeclinedResultCard({
+  offer,
+  onSubmitReason,
+  reasonSubmitting = false,
+  reasonError = null,
+}: {
+  offer: PublicOffer
+  onSubmitReason?: (reason: string) => void
+  reasonSubmitting?: boolean
+  reasonError?: string | null
+}) {
+  const [reason, setReason] = useState('')
+  const canLeaveFeedback = offer.declineSource === 'CANDIDATE' || offer.declineSource === 'CROSS_ACTIVITY'
+  const submitted = offer.declineReasonSubmitted === true
+
   return (
     <OfferResultCard icon={<CircleX className="size-7" />} title="你已放弃本次录取资格">
       <p>你已放弃「{offer.activity.title}」的录取资格。</p>
-      <p>根据活动规则，放弃后无法自行恢复。如需重新获得机会，请联系活动组织方。</p>
+      {canLeaveFeedback && submitted ? (
+        <p className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-foreground">
+          感谢你的反馈。很遗憾这次没能与你同行，祝你未来一切顺利。
+        </p>
+      ) : canLeaveFeedback && onSubmitReason ? (
+        <form
+          className="space-y-3 rounded-lg border bg-muted/40 p-4 text-left"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (reason.trim()) onSubmitReason(reason)
+          }}
+        >
+          <label htmlFor="decline-reason" className="text-sm font-medium text-foreground">
+            如果愿意，可以告诉我们放弃原因（选填）
+          </label>
+          <textarea
+            id="decline-reason"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            maxLength={500}
+            rows={4}
+            disabled={reasonSubmitting}
+            placeholder="你的反馈会帮助我们改进"
+            className="flex min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          />
+          {reasonError ? <p className="text-sm text-destructive" role="alert">{reasonError}</p> : null}
+          <div className="flex justify-end">
+            <Button type="submit" size="sm" disabled={reasonSubmitting || !reason.trim()}>
+              {reasonSubmitting ? '提交中…' : '提交反馈'}
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <p>根据活动规则，放弃后无法自行恢复。如需重新获得机会，请联系活动组织方。</p>
+      )}
     </OfferResultCard>
   )
 }

@@ -91,7 +91,7 @@
 
   /* ============ 状态机：待确认 / 已接受 / 已放弃 / 已过期 / 已失效 ============
      结果态 = 左栏居中 + 只留结果那一行；失效/放弃/过期把整张卡变灰。 */
-  function finishCta(btn, kind, message){
+  function finishCta(btn, kind, message, data){
     var main = section.querySelector(".offer-letter__confirm-main");
     var row = section.querySelector(".offer-letter__cta-row");
     var result = section.querySelector("[data-offer-result]");
@@ -104,6 +104,7 @@
     if(row) row.classList.add("is-resolved");
     if(main) main.classList.add("is-resolved");
     if(result) result.textContent = message || (kind === "accept" ? "已接受，欢迎加入创新实验室！" : "已放弃本次录取资格。");
+    if(kind === "decline") setupDeclineFeedback(data || {});
     if(kind === "accept"){
       fillAllBoxes();
     } else if(letter){
@@ -117,8 +118,8 @@
     if(actionable) return;                  // 可操作：按钮保持可用，什么都不用做
     var acceptBtn = section.querySelector("[data-offer-accept]");
     var declineBtn = section.querySelector("[data-offer-decline]");
-    if(st === "ACCEPTED"){ finishCta(acceptBtn, "accept", data.successMessage); return; }
-    if(st === "DECLINED"){ finishCta(declineBtn, "decline", "你已放弃本次录取资格。"); return; }
+    if(st === "ACCEPTED"){ finishCta(acceptBtn, "accept", data.successMessage, data); return; }
+    if(st === "DECLINED"){ finishCta(declineBtn, "decline", "你已放弃本次录取资格。", data); return; }
     /* EXPIRED / INACTIVE / 链接无效：变灰 + 收起按钮 + 一行说明 */
     var letter = section.querySelector("[data-offer-letter]");
     var main = section.querySelector(".offer-letter__confirm-main");
@@ -150,9 +151,15 @@
       return err;
     });
   }
-  function offerReq(action){
+  function offerReq(action, payload){
     var init = { credentials:"omit", headers:{ accept:"application/json" } };
-    if(action) init.method = "POST";
+    if(action){
+      init.method = "POST";
+      if(payload){
+        init.headers["content-type"] = "application/json";
+        init.body = JSON.stringify(payload);
+      }
+    }
     return fetch(offerUrl(action), init).then(function(res){
       if(!res.ok) return readFailure(res).then(function(err){ throw err });
       return res.json();
@@ -182,6 +189,36 @@
     if(!hint) return;
     hint.textContent = msg || "";
     if(msg) hint.classList.add("is-on"); else hint.classList.remove("is-on");
+  }
+
+  function setupDeclineFeedback(data){
+    var box = section.querySelector("[data-decline-feedback]");
+    if(!box) return;
+    if(data.declineSource !== "CANDIDATE" && data.declineSource !== "CROSS_ACTIVITY"){
+      box.classList.remove("is-on");
+      return;
+    }
+    box.classList.add("is-on");
+    if(data.declineReasonSubmitted === true){
+      box.innerHTML = "<p>感谢你的反馈。很遗憾这次没能与你同行，祝你未来一切顺利。</p>";
+      return;
+    }
+    var input = box.querySelector("[data-decline-reason-input]");
+    var submit = box.querySelector("[data-decline-reason-submit]");
+    if(!submit || submit.dataset.bound === "true") return;
+    submit.dataset.bound = "true";
+    submit.addEventListener("click", function(){
+      var reason = input ? input.value.trim() : "";
+      if(!reason || reason.length > 500) return;
+      submit.disabled = true;
+      offerReq("decline-reason", {reason: reason}).then(function(){
+        setupDeclineFeedback({declineSource:"CANDIDATE", declineReasonSubmitted:true});
+        showHint("");
+      }).catch(function(err){
+        submit.disabled = false;
+        showHint((err && err.message) || "反馈提交失败，请稍后重试。");
+      });
+    });
   }
 
   function loadOffer(){
@@ -332,7 +369,7 @@
         showHint("");
         cta.setAttribute("aria-label", "已接受 offer");
         section.dataset.offerAccepted = "true";
-        finishCta(cta, "accept", res && res.successMessage);
+        finishCta(cta, "accept", res && res.successMessage, res);
       }).catch(function(err){
         var st = stateFromError(err);                 // 后端已给出终态（如已被处理/已过期）：按终态渲染
         if(st){ applyState({ effectiveStatus: st }); return; }
@@ -358,11 +395,11 @@
       }
       if(armedTimer) clearTimeout(armedTimer);
       noBtn.classList.add("is-busy");
-      actionReq("decline").then(function(){
+        actionReq("decline").then(function(res){
         showHint("");
         noBtn.setAttribute("aria-label", "已放弃 offer");
         section.dataset.offerDeclined = "true";
-        finishCta(noBtn, "decline");
+        finishCta(noBtn, "decline", null, res);
       }).catch(function(err){
         resetArm();
         var st = stateFromError(err);

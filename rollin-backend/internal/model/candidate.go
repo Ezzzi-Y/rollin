@@ -55,6 +55,9 @@ type Offer struct {
 	// sources). The batch history view counts offers per batch through it.
 	BatchID         *uint64    `gorm:"column:batch_id;index:idx_offer_batch"`
 	Reason          *string    `gorm:"type:varchar(500)"`
+	DeclineReason   *string    `gorm:"column:decline_reason;type:varchar(500)"`
+	DeclineReasonAt *time.Time `gorm:"column:decline_reason_at"`
+	DeclineSource   string     `gorm:"column:decline_source;type:enum('','CANDIDATE','CROSS_ACTIVITY','SYSTEM');not null;default:''"`
 	CreatedByUserID *uint64    `gorm:"column:created_by_user_id"`
 	ExpiresAt       time.Time  `gorm:"column:expires_at;not null;index:idx_offer_expiry_scan,priority:2"`
 	SentAt          *time.Time `gorm:"column:sent_at"` // first successful mail send (Worker COALESCE backfill)

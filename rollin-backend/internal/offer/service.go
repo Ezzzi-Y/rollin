@@ -53,6 +53,8 @@ type PublicView struct {
 	ServerTime      time.Time
 	AcceptedAt      *time.Time
 	DeclinedAt      *time.Time
+	DeclineSource   string
+	DeclineReasonSubmitted bool
 }
 
 // LeaseLocker is the lease-lock surface the public accept path needs;
@@ -99,6 +101,7 @@ type Service interface {
 	Accept(ctx context.Context, raw string) (PublicView, error)
 	// Decline implements the idempotent decline + refill intent (D1/D4). P5.
 	Decline(ctx context.Context, raw string) (PublicView, error)
+	SubmitDeclineReason(ctx context.Context, raw, reason string) (PublicView, error)
 	// SettleDue expires every PENDING offer past its deadline for ACTIVE activities
 	// (Worker entry point; DISABLED activities are handled by the re-activation
 	// transaction instead, 02 §2.2). P5.
@@ -284,6 +287,8 @@ func (s *service) fillView(res *resolvedToken, now time.Time) PublicView {
 		SuccessMessage: res.SuccessMessage,
 		AcceptedAt:     res.Offer.AcceptedAt,
 		DeclinedAt:     res.Offer.DeclinedAt,
+		DeclineSource:  res.Offer.DeclineSource,
+		DeclineReasonSubmitted: res.Offer.DeclineReason != nil,
 	}
 }
 
@@ -623,6 +628,9 @@ func (s *service) declineLinkageOfferWithMode(ctx context.Context, tx *gorm.DB, 
 	if !won {
 		return nil // lost a concurrent transition — nothing to reconcile
 	}
+	if err := tx.WithContext(ctx).Model(&model.Offer{}).Where("id = ?", offerID).Update("decline_source", model.DeclineSourceCrossActivity).Error; err != nil {
+		return err
+	}
 	_, err = s.updateApplicationStatus(ctx, tx, applicationID, model.ApplicationOffered, model.ApplicationDeclined)
 	if err != nil {
 		return err
@@ -770,6 +778,10 @@ func (s *service) Decline(ctx context.Context, raw string) (PublicView, error) {
 			if !won {
 				return errs.Conflict("Offer 状态已变化，请重试")
 			}
+			offerRow.DeclineSource = model.DeclineSourceCandidate
+			if err := tx.WithContext(ctx).Model(&model.Offer{}).Where("id = ?", offerRow.ID).Update("decline_source", model.DeclineSourceCandidate).Error; err != nil {
+				return err
+			}
 			appWon, err := s.updateApplicationStatus(ctx, tx, offerRow.ApplicationID, model.ApplicationOffered, model.ApplicationDeclined)
 			if err != nil {
 				return err
@@ -837,7 +849,47 @@ func (s *service) declinedView(res *resolvedToken) PublicView {
 		ExpiresAt:       res.Offer.ExpiresAt,
 		ServerTime:      time.Now().UTC(),
 		DeclinedAt:      res.Offer.DeclinedAt,
+		DeclineSource:   res.Offer.DeclineSource,
+		DeclineReasonSubmitted: res.Offer.DeclineReason != nil,
 	}
+}
+
+// SubmitDeclineReason stores optional feedback after a candidate-initiated or
+// cross-activity decline. It never reopens or otherwise changes the Offer state.
+func (s *service) SubmitDeclineReason(ctx context.Context, raw, reason string) (PublicView, error) {
+	reason = strings.TrimSpace(reason)
+	if length := len([]rune(reason)); length < 1 || length > 500 {
+		return PublicView{}, errs.Validation("拒绝原因请输入 1–500 个字符")
+	}
+	res, err := s.resolveToken(ctx, raw)
+	if err != nil {
+		return PublicView{}, err
+	}
+	if err := s.resolveForView(ctx, res); err != nil {
+		return PublicView{}, err
+	}
+	if err := activityStateGate(res.ActivityStatus); err != nil {
+		return PublicView{}, err
+	}
+	if res.Offer.Status != model.OfferDeclined {
+		return PublicView{}, notActionable(res.Offer.Status)
+	}
+	if res.Offer.DeclineSource != model.DeclineSourceCandidate && res.Offer.DeclineSource != model.DeclineSourceCrossActivity {
+		return PublicView{}, errs.Conflict("该 Offer 当前不支持填写拒绝原因")
+	}
+	if res.Offer.DeclineReason != nil {
+		return s.declinedView(res), nil
+	}
+	now := time.Now().UTC()
+	result := s.db.WithContext(ctx).Model(&model.Offer{}).
+		Where("id = ? AND status = 'DECLINED' AND decline_source IN ('CANDIDATE', 'CROSS_ACTIVITY') AND decline_reason IS NULL", res.Offer.ID).
+		Updates(map[string]any{"decline_reason": reason, "decline_reason_at": now})
+	if result.Error != nil {
+		return PublicView{}, result.Error
+	}
+	res.Offer.DeclineReason = &reason
+	res.Offer.DeclineReasonAt = &now
+	return s.declinedView(res), nil
 }
 
 // ---------- expiry settlement ----------

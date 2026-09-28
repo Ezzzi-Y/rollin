@@ -149,6 +149,10 @@ const (
 
 // RefillIntent reasons (05-data-model.md §16).
 const (
+	DeclineSourceCandidate     = "CANDIDATE"
+	DeclineSourceCrossActivity = "CROSS_ACTIVITY"
+	DeclineSourceSystem        = "SYSTEM"
+
 	RefillReasonOfferDeclined        = "OFFER_DECLINED"
 	RefillReasonOfferExpired         = "OFFER_EXPIRED"
 	RefillReasonCrossActivityDecline = "CROSS_ACTIVITY_DECLINE"

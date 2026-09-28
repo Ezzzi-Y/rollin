@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { ApiError } from '@/api/client'
 import { apiErrorMessage } from '@/api/errorMessages'
-import { acceptOffer, declineOffer, getPublicOffer } from '@/api/modules/offer'
+import { acceptOffer, declineOffer, getPublicOffer, submitDeclineReason } from '@/api/modules/offer'
 import type { OfferActionResult, PublicOffer } from '@/api/modules/offer'
 import { ErrorState } from '@/components/common/ErrorState'
 import { formatDateTime } from '@/lib/format'
@@ -165,6 +165,16 @@ export function OfferPage() {
   const busy = actionMutation.isPending
   const busyAction = busy ? actionMutation.variables : null
 
+  const reasonMutation = useMutation({
+    mutationFn: (reason: string) => submitDeclineReason(token, reason),
+    onSuccess: () => {
+      queryClient.setQueryData<PublicOffer>(offerQueryKey, (previous) =>
+        previous ? { ...previous, declineReasonSubmitted: true } : previous,
+      )
+      void queryClient.invalidateQueries({ queryKey: offerQueryKey })
+    },
+  })
+
   // ---------- 渲染分发（加载 → 错误 → 各状态视图） ----------
 
   if (!token) {
@@ -199,7 +209,14 @@ export function OfferPage() {
     case 'ACCEPTED':
       return <AcceptedResultCard offer={offer} />
     case 'DECLINED':
-      return <DeclinedResultCard offer={offer} />
+      return (
+        <DeclinedResultCard
+          offer={offer}
+          onSubmitReason={(reason) => reasonMutation.mutate(reason)}
+          reasonSubmitting={reasonMutation.isPending}
+          reasonError={reasonMutation.error ? apiErrorMessage(reasonMutation.error, '提交失败，请稍后重试') : null}
+        />
+      )
     case 'EXPIRED':
       return <ExpiredResultCard offer={offer} />
     case 'INACTIVE':

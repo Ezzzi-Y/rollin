@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -30,6 +31,8 @@ func (s *Server) mountPublic(r chi.Router) {
 			Post("/offers/{token}/accept", s.offerAccept)
 		public.With(s.offerRateLimit(bucketOfferAction, offerActionRateLimit)).
 			Post("/offers/{token}/decline", s.offerDecline)
+		public.With(s.offerRateLimit(bucketOfferAction, offerActionRateLimit)).
+			Post("/offers/{token}/decline-reason", s.offerDeclineReason)
 		// P2 (invitations, §4.4/§4.5): one-shot activation; exempt from CSRF because
 		// the raw token is the credential (03 §4.3).
 		public.Get("/invitations/{token}", s.invitationView)
@@ -82,6 +85,8 @@ func (s *Server) offerView(w http.ResponseWriter, r *http.Request) {
 		"actionable":      view.Actionable,
 		"expiresAt":       rfc3339(view.ExpiresAt),
 		"serverTime":      rfc3339(view.ServerTime),
+		"declineSource":   view.DeclineSource,
+		"declineReasonSubmitted": view.DeclineReasonSubmitted,
 	}
 	if view.EffectiveStatus == "ACCEPTED" {
 		body["successMessage"] = view.SuccessMessage
@@ -135,6 +140,28 @@ func (s *Server) offerDecline(w http.ResponseWriter, r *http.Request) {
 		"effectiveStatus": model.OfferDeclined,
 		"actionable":      false,
 		"declinedAt":      rfc3339Ptr(view.DeclinedAt),
+		"declineSource":   view.DeclineSource,
+		"declineReasonSubmitted": view.DeclineReasonSubmitted,
+	})
+}
+
+func (s *Server) offerDeclineReason(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, r, errs.Validation("拒绝原因格式不正确"))
+		return
+	}
+	view, err := s.deps.Offers.SubmitDeclineReason(r.Context(), chi.URLParam(r, "token"), payload.Reason)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": model.OfferDeclined, "effectiveStatus": model.OfferDeclined,
+		"actionable": false, "declinedAt": rfc3339Ptr(view.DeclinedAt),
+		"declineSource": view.DeclineSource, "declineReasonSubmitted": view.DeclineReasonSubmitted,
 	})
 }
 
