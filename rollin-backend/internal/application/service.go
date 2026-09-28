@@ -105,6 +105,9 @@ type OfferSummary struct {
 	Status     string
 	Source     string
 	Reason     *string
+	DeclineReason   *string
+	DeclineReasonAt *string
+	DeclineSource   string
 	CreatedAt  string
 	ExpiresAt  string
 	SentAt     *string
@@ -742,6 +745,9 @@ func summarizeOffer(offer model.Offer, mailStatus map[uint64]string) OfferSummar
 		Status:     offer.Status,
 		Source:     offer.Source,
 		Reason:     offer.Reason,
+		DeclineReason:   offer.DeclineReason,
+		DeclineReasonAt: rfc3339Ptr(offer.DeclineReasonAt),
+		DeclineSource:   offer.DeclineSource,
 		CreatedAt:  rfc3339(offer.CreatedAt),
 		ExpiresAt:  rfc3339(offer.ExpiresAt),
 		SentAt:     rfc3339Ptr(offer.SentAt),

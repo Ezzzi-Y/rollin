@@ -148,6 +148,9 @@ export interface OfferHistoryItem {
   status: OfferStatus
   source: OfferSource
   reason: string | null
+  declineReason?: string | null
+  declineReasonAt?: string | null
+  declineSource?: string
   createdAt: string
   expiresAt: string | null
   expiredAt?: string | null

@@ -95,6 +95,7 @@
     var main = section.querySelector(".offer-letter__confirm-main");
     var row = section.querySelector(".offer-letter__cta-row");
     var result = section.querySelector("[data-offer-result]");
+    var resultTitle = section.querySelector("[data-offer-result-title]");
     var letter = section.querySelector("[data-offer-letter]");
     if(btn){
       btn.classList.remove("is-busy");
@@ -103,6 +104,7 @@
     }
     if(row) row.classList.add("is-resolved");
     if(main) main.classList.add("is-resolved");
+    if(resultTitle) resultTitle.textContent = kind === "accept" ? "已接受录取" : "已放弃录取";
     if(result) result.textContent = message || (kind === "accept" ? "已接受，欢迎加入创新实验室！" : "已放弃本次录取资格。");
     if(kind === "decline") setupDeclineFeedback(data || {});
     if(kind === "accept"){
@@ -126,9 +128,14 @@
     var main = section.querySelector(".offer-letter__confirm-main");
     var row = section.querySelector(".offer-letter__cta-row");
     var result = section.querySelector("[data-offer-result]");
+    var resultTitle = section.querySelector("[data-offer-result-title]");
     if(letter) letter.classList.add("is-muted");
     if(main) main.classList.add("is-resolved");
     if(row) row.classList.add("is-resolved");
+    if(resultTitle) {
+      resultTitle.textContent = st === "EXPIRED" ? "已过期" :
+                                st === "INACTIVE" ? "Offer 已失效" : "链接已失效";
+    }
     if(result){
       result.textContent = st === "EXPIRED" ? "该 offer 已超过截止时间。" :
                            st === "INACTIVE" ? "该 offer 已失效。" : "链接无效或已失效。";

@@ -145,11 +145,14 @@ func renderCandidateDetail(detail *application.Detail, withOffers bool) map[stri
 		for i := range detail.Offers {
 			offer := detail.Offers[i]
 			offers = append(offers, map[string]any{
-				"offerId":    offer.OfferID,
-				"status":     offer.Status,
-				"source":     offer.Source,
-				"reason":     offer.Reason,
-				"createdAt":  offer.CreatedAt,
+				"offerId":         offer.OfferID,
+				"status":          offer.Status,
+				"source":          offer.Source,
+				"reason":          offer.Reason,
+				"declineReason":   offer.DeclineReason,
+				"declineReasonAt": offer.DeclineReasonAt,
+				"declineSource":   offer.DeclineSource,
+				"createdAt":       offer.CreatedAt,
 				"expiresAt":  offer.ExpiresAt,
 				"sentAt":     offer.SentAt,
 				"acceptedAt": offer.AcceptedAt,

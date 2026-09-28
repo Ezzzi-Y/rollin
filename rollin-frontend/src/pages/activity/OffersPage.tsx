@@ -168,14 +168,25 @@ function OfferHistoryDialog({
           </div>
         )}
 
-        {offers.some((offer) => offer.reason) ? (
+        {offers.some((offer) => offer.reason || offer.declineReason) ? (
           <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
             {offers
-              .filter((offer) => offer.reason)
+              .filter((offer) => offer.reason || offer.declineReason)
               .map((offer) => (
-                <p key={offer.offerId} className="text-muted-foreground">
-                  Offer #{offer.offerId}（{OFFER_SOURCE_LABEL[offer.source] ?? offer.source}）原因：{offer.reason}
-                </p>
+                <div key={offer.offerId} className="space-y-1 text-muted-foreground">
+                  {offer.reason ? (
+                    <p>
+                      Offer #{offer.offerId}（{OFFER_SOURCE_LABEL[offer.source] ?? offer.source}）发放原因：{offer.reason}
+                    </p>
+                  ) : null}
+                  {offer.declineReason ? (
+                    <p>
+                      Offer #{offer.offerId} 候选人放弃原因
+                      {offer.declineReasonAt ? `（${formatDateTime(offer.declineReasonAt)}）` : ''}：
+                      <span className="whitespace-pre-wrap">{offer.declineReason}</span>
+                    </p>
+                  ) : null}
+                </div>
               ))}
           </div>
         ) : null}
