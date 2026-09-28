@@ -94,7 +94,10 @@ func Load() (Config, error) {
 		// SUPER_ADMIN_INITIAL_PASSWORD is the canonical name; SUPER_ADMIN_PASSWORD is
 		// accepted as a legacy alias so existing deployments keep booting.
 		SuperAdminInitialPassword: env("SUPER_ADMIN_INITIAL_PASSWORD", os.Getenv("SUPER_ADMIN_PASSWORD")),
-		MailWorkerEvery:           15 * time.Second,
+		// Mail worker scan cadence must stay at or below the per-host send rest in
+		// mail.DefaultWorkerConfig (12s): the worker sends at most one mail per host
+		// per scan, so a slower cadence would cap the pace below 5 mails/min.
+		MailWorkerEvery:           6 * time.Second,
 		RefillWorkerEvery:         15 * time.Second,
 	}
 	// Single-domain deployments serve the console from the same host as the offers.

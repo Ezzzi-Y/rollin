@@ -60,14 +60,16 @@ type WorkerConfig struct {
 	BackoffMax  time.Duration
 	// SendInterval is the minimum rest between two submissions to the SAME SMTP host
 	// (发件服务器限流保护: smtp.qq.com / 网易等对发送频率有限制). DefaultWorkerConfig
-	// fixes it at one minute per host (每个服务器有自己的间隔) and it is deliberately
-	// NOT env-configurable; zero disables the pacing, which the tests rely on.
+	// fixes it at twelve seconds per host (每服务器每分钟 5 封; 每个服务器有自己的间隔)
+	// and it is deliberately NOT env-configurable; zero disables the pacing, which
+	// the tests rely on. The scan cadence bounds the pace too — at most one send per
+	// host per scan — so it must stay at or below this interval (config.MailWorkerEvery).
 	SendInterval time.Duration
 }
 
 // DefaultWorkerConfig derives the defaults from the deployment config (poll cadence and
 // SMTP send timeout are configurable there: MAIL_SMTP_TIMEOUT_SECONDS). The per-host
-// send rest is contractual and stays at one minute.
+// send rest is contractual and stays at twelve seconds (每服务器每分钟 5 封).
 func DefaultWorkerConfig(every, sendTimeout time.Duration) WorkerConfig {
 	if every <= 0 {
 		every = 15 * time.Second
@@ -82,7 +84,7 @@ func DefaultWorkerConfig(every, sendTimeout time.Duration) WorkerConfig {
 		Batch:        20,
 		BackoffBase:  time.Minute,
 		BackoffMax:   time.Hour,
-		SendInterval: time.Minute,
+		SendInterval: 12 * time.Second,
 	}
 }
 

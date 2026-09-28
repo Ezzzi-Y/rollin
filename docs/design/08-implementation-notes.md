@@ -250,7 +250,9 @@ P5 以纯只读 + effectiveStatus 方案重建）。
    机制选 PLAIN/CRAM-MD5。
 6. **发件服务器限流保护（per-host 发送间隔，internal/mail/pacer.go）**：同一
    SMTP host（如 smtp.qq.com / smtp.163.com，按 `cfg.Host` 小写归一后记账）两次
-   提交之间强制休息一个间隔，各 host 独立计时（固定 60s）。实现为进程内
+   提交之间强制休息一个间隔，各 host 独立计时（固定 12s，每服务器每分钟 5 封）。
+   worker 扫描间隔（config.MailWorkerEvery，6s）每次扫描每 host 至多发一封，
+   必须不大于该间隔，否则实际节奏会被扫描频率卡住。实现为进程内
    `sendPacer` 记账器：发送前 `ReadyAt` 检查，未到点 ⇒ `DeferTask` 把任务退回
    PENDING 并把 `next_retry_at` 推到该 host 的可发送时刻——**不计失败**
    （retry_count/last_error 不动，租约守卫同 CompleteTask），同一扫描批次中其它
