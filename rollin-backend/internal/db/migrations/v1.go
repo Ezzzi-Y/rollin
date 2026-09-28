@@ -303,7 +303,7 @@ const ddlAuditLog = `CREATE TABLE IF NOT EXISTS audit_log (
   detail JSON NULL,
   request_id VARCHAR(64) NULL,
   ip_address VARCHAR(45) NULL,
-  user_agent VARCHAR(255) NULL,
+  user_agent VARCHAR(512) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_audit_activity_time (activity_id, created_at),

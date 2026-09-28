@@ -27,7 +27,7 @@ type AuditLog struct {
 	Detail           datatypes.JSON `gorm:"type:json"`
 	RequestID        *string        `gorm:"column:request_id;type:varchar(64)"`
 	IPAddress        *string        `gorm:"column:ip_address;type:varchar(45)"`
-	UserAgent        *string        `gorm:"column:user_agent;type:varchar(255)"`
+	UserAgent        *string        `gorm:"column:user_agent;type:varchar(512)"`
 	CreatedAt        time.Time      `gorm:"index:idx_audit_activity_time,priority:3;index:idx_audit_action,priority:3;index:idx_audit_actor,priority:4"`
 }
 
