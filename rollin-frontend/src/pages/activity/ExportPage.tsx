@@ -8,18 +8,20 @@ import { ExportButton } from './components/ExportButton'
 const EXPORT_COLUMNS = [
   '学号（文本格式，保留前导零）',
   '姓名',
+  '班级',
   '邮箱',
-  'score',
-  'rank',
+  'QQ',
+  '分数',
+  '排名',
   '导入顺序',
-  'Application 状态',
   'Offer 状态（当前 / 最近一次）',
-  'Offer 发放来源',
+  'Offer 来源',
   'Offer 发送时间',
-  'Accept 时间',
-  'Decline 时间',
-  'Expire 时间',
-  '创建时间',
+  'Offer 接受时间',
+  'Offer 放弃时间',
+  'Offer 放弃原因（候选人选填）',
+  'Offer 超时时间',
+  '报名时间',
 ]
 
 function ExportContent() {

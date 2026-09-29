@@ -30,14 +30,50 @@ const MaxRows = 50000
 const batchSize = 1000
 
 // SheetName is the single worksheet of the export.
-const SheetName = "Candidates"
+const SheetName = "候选人"
 
-// Column headers, verbatim the §9.1 column list.
+// Column headers, in the §9.1 column order (the contract fixes the column set and
+// semantics; the display labels follow the admin-UI vocabulary of StatusBadge.tsx).
+// The status/source VALUES are likewise rendered with the admin-UI Chinese labels (see
+// the label maps below).
 var headers = []string{
-	"studentId", "name", "email", "score", "rank", "importOrder",
-	"applicationStatus", "offerStatus", "offerSource",
-	"offerSentAt", "offerAcceptedAt", "offerDeclinedAt", "offerExpiredAt",
-	"createdAt",
+	"学号", "姓名", "班级", "邮箱", "QQ", "分数", "排名", "导入顺序",
+	"Offer 状态", "Offer 来源",
+	"Offer 发送时间", "Offer 接受时间", "Offer 放弃时间", "Offer 放弃原因", "Offer 超时时间",
+	"报名时间",
+}
+
+// columnWidths mirrors headers in Excel width units (CJK ≈ 2 units per char) so no
+// header, email or "yyyy-mm-dd hh:mm:ss" timestamp is clipped on a default install.
+// 放弃原因 is candidate free text (≤500 chars): width 40 shows typical reasons; longer
+// text stays complete in the cell and clips visually like any Excel column.
+var columnWidths = []float64{14, 10, 16, 32, 16, 8, 8, 10, 12, 12, 20, 20, 20, 40, 20, 20}
+
+// Enum-code → display-label maps, verbatim the admin UI vocabulary (StatusBadge.tsx
+// OFFER_META, OffersPage source labels). The export is for Chinese admins; the code
+// stays the archive truth in the API/audit while these two columns render humanly. An
+// unknown code falls back to itself (label()), so a future enum never exports as a
+// blank cell.
+var offerStatusLabels = map[string]string{
+	model.OfferPending:  "待确认",
+	model.OfferAccepted: "已接受",
+	model.OfferDeclined: "已放弃",
+	model.OfferExpired:  "已超时",
+}
+
+var offerSourceLabels = map[string]string{
+	model.OfferSourceAuto:    "自动",
+	model.OfferSourceBatch:   "分批",
+	model.OfferSourceManual:  "手动",
+	model.OfferSourceSpecial: "特殊",
+}
+
+// label maps an enum code to its export display label; unknown codes pass through.
+func label(code string, labels map[string]string) string {
+	if label, ok := labels[code]; ok {
+		return label
+	}
+	return code
 }
 
 // Service is the export domain API.
@@ -83,16 +119,52 @@ func (s *service) ExportCandidatesXLSX(ctx context.Context, activityID uint64, w
 	if err != nil {
 		return err
 	}
+	// White-on-azure header band; direct cell formatting also wins over the table style
+	// below, so the header looks the same everywhere.
+	headerStyle, err := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true, Color: "#FFFFFF"},
+		Fill:      excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"#4472C4"}},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+	})
+	if err != nil {
+		return err
+	}
 	sw, err := f.NewStreamWriter(SheetName)
 	if err != nil {
 		return err
 	}
-	if err := sw.SetRow("A1", headerCells()); err != nil {
+	// Widths and the frozen title row must precede the first SetRow (stream order rule).
+	for i, width := range columnWidths {
+		if err := sw.SetColWidth(i+1, i+1, width); err != nil {
+			return err
+		}
+	}
+	if err := sw.SetPanes(&excelize.Panes{
+		Freeze: true, YSplit: 1, TopLeftCell: "A2", ActivePane: "bottomLeft",
+	}); err != nil {
+		return err
+	}
+	if err := sw.SetRow("A1", headerCells(headerStyle), excelize.RowOpts{Height: 24}); err != nil {
 		return err
 	}
 
-	if err := s.writeRows(ctx, activityID, sw, textStyle); err != nil {
+	lastRow, err := s.writeRows(ctx, activityID, sw, textStyle)
+	if err != nil {
 		return err
+	}
+	// The banded table adds the header filter dropdowns admins use to slice by status;
+	// it needs at least header + one data row, so an empty export skips it.
+	if lastRow >= 2 {
+		lastCell, err := excelize.CoordinatesToCellName(len(headers), lastRow)
+		if err != nil {
+			return err
+		}
+		if err := sw.AddTable(&excelize.Table{
+			Range:     "A1:" + lastCell,
+			StyleName: "TableStyleMedium2",
+		}); err != nil {
+			return err
+		}
 	}
 	if err := sw.Flush(); err != nil {
 		return err
@@ -101,17 +173,18 @@ func (s *service) ExportCandidatesXLSX(ctx context.Context, activityID uint64, w
 }
 
 // writeRows streams the applications in import_order batches. rowNo is one-based like
-// the spreadsheet grid; data starts at row 2.
-func (s *service) writeRows(ctx context.Context, activityID uint64, sw *excelize.StreamWriter, textStyle int) error {
+// the spreadsheet grid; data starts at row 2. Returns the last written row number so
+// the caller can frame the filter table.
+func (s *service) writeRows(ctx context.Context, activityID uint64, sw *excelize.StreamWriter, textStyle int) (int, error) {
 	rowNo := 1
 	after := uint64(0)
 	for {
 		rows, err := s.repo.ListApplicationBatch(ctx, activityID, after, batchSize)
 		if err != nil {
-			return err
+			return rowNo, err
 		}
 		if len(rows) == 0 {
-			return nil
+			return rowNo, nil
 		}
 		ids := make([]uint64, 0, len(rows))
 		for i := range rows {
@@ -119,7 +192,7 @@ func (s *service) writeRows(ctx context.Context, activityID uint64, sw *excelize
 		}
 		offers, err := s.repo.OffersForApplications(ctx, ids)
 		if err != nil {
-			return err
+			return rowNo, err
 		}
 		current := pickCurrentOffers(offers)
 
@@ -128,34 +201,35 @@ func (s *service) writeRows(ctx context.Context, activityID uint64, sw *excelize
 			if rowNo-1 > MaxRows {
 				// Defensive re-check: the count gate ran before generation; a concurrent
 				// insert must not silently overshoot the ceiling.
-				return exportTooLarge(MaxRows + 1)
+				return rowNo, exportTooLarge(MaxRows + 1)
 			}
 			cell, err := excelize.CoordinatesToCellName(1, rowNo)
 			if err != nil {
-				return err
+				return rowNo, err
 			}
 			if err := sw.SetRow(cell, dataCells(rows[i], current[rows[i].ID], textStyle)); err != nil {
-				return err
+				return rowNo, err
 			}
 			after = rows[i].ImportOrder
 		}
 		if len(rows) < batchSize {
-			return nil
+			return rowNo, nil
 		}
 	}
 }
 
-// headerCells builds row 1 from the §9.1 column list.
-func headerCells() []interface{} {
+// headerCells builds row 1 from the §9.1 column order, styled with the header band.
+func headerCells(styleID int) []interface{} {
 	values := make([]interface{}, len(headers))
 	for i, h := range headers {
-		values[i] = h
+		values[i] = excelize.Cell{StyleID: styleID, Value: h}
 	}
 	return values
 }
 
 // dataCells renders one §9.1 row. The studentId cell carries the text style (A19);
-// missing offer columns stay empty strings.
+// status/source values go through the Chinese label maps; missing offer columns stay
+// empty strings.
 func dataCells(row exportRow, offer *model.Offer, textStyle int) []interface{} {
 	var rank interface{} = ""
 	if row.Rank != nil {
@@ -164,22 +238,26 @@ func dataCells(row exportRow, offer *model.Offer, textStyle int) []interface{} {
 	cells := []interface{}{
 		excelize.Cell{StyleID: textStyle, Value: row.StudentID},
 		row.Name,
+		row.ClassName,
 		row.Email,
+		row.QQ,
 		row.Score,
 		rank,
 		int64(row.ImportOrder),
-		row.Status,
 	}
-	var offerStatus, offerSource, sentAt, acceptedAt, declinedAt, expiredAt interface{} = "", "", "", "", "", ""
+	var offerStatus, offerSource, sentAt, acceptedAt, declinedAt, declinedReason, expiredAt interface{} = "", "", "", "", "", "", ""
 	if offer != nil {
-		offerStatus = offer.Status
-		offerSource = offer.Source
+		offerStatus = label(offer.Status, offerStatusLabels)
+		offerSource = label(offer.Source, offerSourceLabels)
 		sentAt = timeCell(offer.SentAt)
 		acceptedAt = timeCell(offer.AcceptedAt)
 		declinedAt = timeCell(offer.DeclinedAt)
+		if offer.DeclineReason != nil {
+			declinedReason = *offer.DeclineReason
+		}
 		expiredAt = timeCell(offer.ExpiredAt)
 	}
-	return append(cells, offerStatus, offerSource, sentAt, acceptedAt, declinedAt, expiredAt, timeCell(&row.CreatedAt))
+	return append(cells, offerStatus, offerSource, sentAt, acceptedAt, declinedAt, declinedReason, expiredAt, timeCell(&row.CreatedAt))
 }
 
 // timeCell renders a timestamp in the "2006-01-02 15:04:05" UTC display form (empty for

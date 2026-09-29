@@ -788,9 +788,11 @@ GET /api/activities/{slug}/export/candidates.xlsx
 - `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
 - `Content-Disposition: attachment; filename="tech-2026-candidates-20260919.xlsx"`
 
-列（P6-4，学号列强制文本格式防前导零丢失，A19）：
-`studentId | name | email | score | rank | importOrder | applicationStatus | offerStatus(当前) | offerSource | offerSentAt | offerAcceptedAt | offerDeclinedAt | offerExpiredAt | createdAt`
+列（P6-4，学号列强制文本格式防前导零丢失，A19；顺序固定）：
+`studentId | name | className | email | qq | score | rank | importOrder | offerStatus(当前) | offerSource | offerSentAt | offerAcceptedAt | offerDeclinedAt | offerDeclineReason(可空) | offerExpiredAt | createdAt`
 口径：Application 全量（含 WAITING/INELIGIBLE）；`offerStatus` 取该 Application 当前有效/最近一次 Offer；历史 Offer 不逐行列出（详情接口可查）。
+
+展示层（P6-6）：表头以中文渲染——`学号 | 姓名 | 班级 | 邮箱 | QQ | 分数 | 排名 | 导入顺序 | Offer 状态 | Offer 来源 | Offer 发送时间 | Offer 接受时间 | Offer 放弃时间 | Offer 放弃原因 | Offer 超时时间 | 报名时间`（沿用管理端 StatusBadge 词汇）；Offer 状态 / Offer 来源两列的值映射为管理端中文文案（待确认/已接受/已放弃/已超时；来源：自动/分批/手动/特殊），未知枚举回退原始码；放弃原因为候选人提交的自由文本（≤500 字，仅候选人/跨活动联动放弃时可能存在），原样导出；工作表名「候选人」，列宽按内容预设、首行冻结，全表套用带筛选下拉的样式化表格（过滤 Offer 状态）。
 
 ---
 
