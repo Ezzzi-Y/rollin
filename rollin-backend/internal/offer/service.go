@@ -690,7 +690,7 @@ func (s *service) refillActivitiesPostCommit(ctx context.Context, activityIDs []
 		}
 		// D4: refill only when ACTIVE and not paused; otherwise the intent stays
 		// PENDING for the executor / the OWNER's refill/resume.
-		if act.Status != model.ActivityActive || act.OfferMode != model.OfferModeAuto || act.RefillPaused {
+		if act.Status != model.ActivityActive || !act.RankingFrozen || act.OfferMode != model.OfferModeAuto || act.RefillPaused {
 			continue
 		}
 		if _, err := s.deps.Refill.FillByRank(ctx, nil, id, model.OfferSourceAuto); err != nil {
@@ -819,7 +819,7 @@ func (s *service) Decline(ctx context.Context, raw string) (PublicView, error) {
 					return err
 				}
 				mainRefill = true
-				refillReady = act.Status == model.ActivityActive && !act.RefillPaused
+				refillReady = act.Status == model.ActivityActive && act.RankingFrozen && !act.RefillPaused
 			}
 			offerRow.DeclinedAt = &tnow
 			res.Offer = *offerRow

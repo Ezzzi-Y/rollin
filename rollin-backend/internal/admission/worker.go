@@ -181,10 +181,11 @@ func (w *Worker) executeOne(ctx context.Context, activityID uint64) error {
 			}
 			return err
 		}
-		// D4/INV-6: only an ACTIVE, unpaused AUTO activity may refill. Everyone else
+		// D4/INV-6: only an ACTIVE, ranking-frozen, unpaused AUTO activity may refill. Everyone else
 		// keeps PENDING intents — DISABLED waits for re-activation + resume, paused
-		// waits for the OWNER's refill/resume, ARCHIVED never executes (D2).
-		if act.Status != model.ActivityActive || act.OfferMode != model.OfferModeAuto || act.RefillPaused {
+		// waits for the OWNER's refill/resume, pre-admission activities wait for the
+		// formal start, and ARCHIVED never executes (D2).
+		if act.Status != model.ActivityActive || !act.RankingFrozen || act.OfferMode != model.OfferModeAuto || act.RefillPaused {
 			return nil
 		}
 		var pending int64

@@ -442,9 +442,11 @@ func (s *service) fill(ctx context.Context, tx *gorm.DB, activityID uint64, opts
 		}
 		return 0, err
 	}
-	// Refill never touches a non-ACTIVE activity: DISABLED waits for re-activation,
-	// ARCHIVED is final. Callers gate on refill_paused themselves (D4).
-	if act.Status != model.ActivityActive {
+	// Refill only runs for an ACTIVE activity whose ranking has been frozen by
+	// starting formal admission. Before that point the waiting list is still being
+	// prepared and no automatic Offer may be issued, even if another path happens
+	// to ask the refill primitive to run.
+	if act.Status != model.ActivityActive || !act.RankingFrozen {
 		return 0, nil
 	}
 

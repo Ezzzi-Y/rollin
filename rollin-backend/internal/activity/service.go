@@ -602,7 +602,7 @@ func (s *service) UpdateQuota(ctx context.Context, actorID uint64, slug string, 
 		// D4/04 §5.8: a quota increase on an AUTO activity signals a refill. When
 		// refill is paused the intent is persisted (the resume/executor re-checks);
 		// when not paused the refill runs best-effort after commit.
-		if quotaIncreased && act.OfferMode == model.OfferModeAuto {
+		if quotaIncreased && act.OfferMode == model.OfferModeAuto && act.RankingFrozen {
 			if act.RefillPaused {
 				if err := tx.Create(&model.RefillIntent{
 					ActivityID: act.ID,
