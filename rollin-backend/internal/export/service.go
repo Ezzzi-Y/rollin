@@ -260,13 +260,19 @@ func dataCells(row exportRow, offer *model.Offer, textStyle int) []interface{} {
 	return append(cells, offerStatus, offerSource, sentAt, acceptedAt, declinedAt, declinedReason, expiredAt, timeCell(&row.CreatedAt))
 }
 
-// timeCell renders a timestamp in the "2006-01-02 15:04:05" UTC display form (empty for
-// the many absent offer milestones); the contract fixes no cell format for XLSX.
+// displayZone is the export's display timezone, pinned to UTC+8 (北京时间) as a
+// FixedZone so the rendered text does not depend on the container/host TZ setting —
+// same caliber as the mail body renderer (mail.render.go mailZone). Storage is UTC
+// everywhere; only this display conversion moves.
+var displayZone = time.FixedZone("UTC+8", 8*3600)
+
+// timeCell renders a timestamp in the "2006-01-02 15:04:05" UTC+8 display form (empty
+// for the many absent offer milestones); the contract fixes no cell format for XLSX.
 func timeCell(t *time.Time) interface{} {
 	if t == nil || t.IsZero() {
 		return ""
 	}
-	return t.UTC().Format("2006-01-02 15:04:05")
+	return t.In(displayZone).Format("2006-01-02 15:04:05")
 }
 
 // pickCurrentOffers groups the history by application and applies the candidate-list

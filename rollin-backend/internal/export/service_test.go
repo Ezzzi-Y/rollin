@@ -134,23 +134,24 @@ func TestExportCandidatesXLSX(t *testing.T) {
 	}
 	// app2: current offer = the SPECIAL PENDING re-issue, its sent time — NOT the old
 	// offer's EXPIRED state/times (multi-history folded into one row per contract).
-	// Status/source cells carry the admin-UI Chinese labels.
+	// Status/source cells carry the admin-UI Chinese labels; timestamps render in
+	// UTC+8 (北京时间) — the fixtures seed 09:05/12:30/10:00 UTC.
 	if rows[2][0] != "2026010388" || rows[2][7] != "2" {
 		t.Fatalf("row2 identity = %v", rows[2])
 	}
 	if rows[2][8] != "待确认" || rows[2][9] != "特殊" {
 		t.Fatalf("row2 offer = %v/%v, want 待确认/特殊", rows[2][8], rows[2][9])
 	}
-	if rows[2][10] != "2026-09-18 09:05:00" || rows[2][14] != "" {
+	if rows[2][10] != "2026-09-18 17:05:00" || rows[2][14] != "" {
 		t.Fatalf("row2 offer times = sent %q expired %q", rows[2][10], rows[2][14])
 	}
 	// app3: rank numeric cell, accepted_at rendered.
-	if rows[3][6] != "3" || rows[3][8] != "已接受" || rows[3][11] != "2026-09-19 12:30:00" {
+	if rows[3][6] != "3" || rows[3][8] != "已接受" || rows[3][11] != "2026-09-19 20:30:00" {
 		t.Fatalf("row3 = %v", rows[3])
 	}
 	// app4: terminal DECLINED offer carries declined_at and the candidate's free-text
 	// reason; the pending app2 row leaves the reason column empty.
-	if rows[4][8] != "已放弃" || rows[4][9] != "自动" || rows[4][12] != "2026-09-20 10:00:00" || rows[4][13] != "已选择其他研究方向" {
+	if rows[4][8] != "已放弃" || rows[4][9] != "自动" || rows[4][12] != "2026-09-20 18:00:00" || rows[4][13] != "已选择其他研究方向" {
 		t.Fatalf("row4 decline = status %v/%v at %v reason %v", rows[4][8], rows[4][9], rows[4][12], rows[4][13])
 	}
 	if rows[2][13] != "" {

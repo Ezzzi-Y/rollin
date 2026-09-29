@@ -59,7 +59,7 @@ function ExportContent() {
           </div>
           <p className="text-xs text-muted-foreground">
             文件名格式：<code className="font-mono">{`${ws.slug || 'slug'}-candidates-YYYYMMDD.xlsx`}</code>；
-            学号列强制文本格式，防止前导零丢失（A19）。
+            学号列强制文本格式，防止前导零丢失（A19）；时间均为北京时间（UTC+8）。
           </p>
         </CardContent>
       </Card>
