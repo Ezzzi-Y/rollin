@@ -42,7 +42,7 @@ func TestIllegalVariablesDetected(t *testing.T) {
 	if got := illegalVariables("OFFER", "{{activityTitle}}", "{{candidateName}} {{offerUrl}} {{expiresAt}} {{siteName}}"); len(got) != 0 {
 		t.Fatalf("full whitelist must pass, got %v", got)
 	}
-	if got := illegalVariables("INVITE_ADMIN", "{{inviteeName}}", "{{inviteUrl}} {{role}} {{siteName}}"); len(got) != 0 {
+	if got := illegalVariables("INVITE_ADMIN", "{{inviteeName}}", "{{activitySlug}} {{inviteUrl}} {{role}} {{siteName}}"); len(got) != 0 {
 		t.Fatalf("invite whitelist must pass, got %v", got)
 	}
 }

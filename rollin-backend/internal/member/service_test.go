@@ -157,7 +157,9 @@ func TestInviteOwnerHappyPath(t *testing.T) {
 	if task.Scope != model.ScopePlatform || task.MailType != model.MailTypeInvite || task.Status != model.MailTaskPending {
 		t.Fatalf("mail task state = %+v", task)
 	}
-	if !strings.Contains(string(task.Payload), `"token":"`) || !strings.Contains(string(task.Payload), invited.Email) {
+	if !strings.Contains(string(task.Payload), `"token":"`) ||
+		!strings.Contains(string(task.Payload), invited.Email) ||
+		!strings.Contains(string(task.Payload), `"activitySlug":"tech-2026"`) {
 		t.Fatalf("mail task payload missing raw token/context: %s", task.Payload)
 	}
 	// Platform audit row (scope=PLATFORM, activity_id=0) with OWNER_INVITED.

@@ -29,7 +29,7 @@ var (
 		"candidateName", "activityTitle", "offerUrl", "expiresAt", "siteName",
 	}
 	inviteVariables = []string{
-		"inviteeName", "inviteeEmail", "activityTitle", "inviteUrl", "expiresAt", "siteName", "role",
+		"inviteeName", "inviteeEmail", "activityTitle", "activitySlug", "inviteUrl", "expiresAt", "siteName", "role",
 	}
 )
 

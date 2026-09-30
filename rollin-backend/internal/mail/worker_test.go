@@ -437,7 +437,7 @@ func TestWorkerInviteLifecycle(t *testing.T) {
 
 		raw, inviteID, userID := seedInvite(t, db, activityID, model.MemberRoleOwner, nil, nil)
 		svc := New(db, NewGormRepository(db), audit.New(db))
-		payload := InvitePayload{Token: raw, Role: model.MemberRoleOwner, InviteeName: "李负责", InviteeEmail: "li@example.edu.cn", ActivityTitle: "技术部招新", ExpiresAt: time.Now().UTC().Add(72 * time.Hour)}
+		payload := InvitePayload{Token: raw, Role: model.MemberRoleOwner, InviteeName: "李负责", InviteeEmail: "li@example.edu.cn", ActivityTitle: "技术部招新", ActivitySlug: "tech-2026", ExpiresAt: time.Now().UTC().Add(72 * time.Hour)}
 		var taskID uint64
 		db.Transaction(func(tx *gorm.DB) error {
 			if err := svc.QueueInviteMail(ctx, tx, model.ScopePlatform, activityID, inviteID, "li@example.edu.cn", payload); err != nil {
@@ -464,6 +464,9 @@ func TestWorkerInviteLifecycle(t *testing.T) {
 		if !strings.Contains(messages[0].Data, "负责人") {
 			t.Fatalf("mail must carry the role display name: %q", messages[0].Data)
 		}
+		if !strings.Contains(messages[0].Data, "tech-2026") {
+			t.Fatalf("mail must carry the activity slug: %q", messages[0].Data)
+		}
 		_ = userID
 	})
 
@@ -489,7 +492,7 @@ func TestWorkerInviteLifecycle(t *testing.T) {
 
 			raw, inviteID, _ := seedInvite(t, db, activityID, model.MemberRoleAdmin, tc.mutateToken, tc.mutateUser)
 			svc := New(db, NewGormRepository(db), audit.New(db))
-			payload := InvitePayload{Token: raw, Role: model.MemberRoleAdmin, InviteeName: "王同学", InviteeEmail: "wang@example.edu.cn", ActivityTitle: "技术部招新", ExpiresAt: time.Now().UTC().Add(72 * time.Hour)}
+			payload := InvitePayload{Token: raw, Role: model.MemberRoleAdmin, InviteeName: "王同学", InviteeEmail: "wang@example.edu.cn", ActivityTitle: "技术部招新", ActivitySlug: "tech-2026", ExpiresAt: time.Now().UTC().Add(72 * time.Hour)}
 			var taskID uint64
 			db.Transaction(func(tx *gorm.DB) error {
 				if err := svc.QueueInviteMail(ctx, tx, model.ScopeActivity, activityID, inviteID, "wang@example.edu.cn", payload); err != nil {

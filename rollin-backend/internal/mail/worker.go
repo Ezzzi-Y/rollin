@@ -432,6 +432,16 @@ func (w *Worker) renderInvite(ctx context.Context, task *model.MailTask, payload
 	if adminBase == "" {
 		return "", "", errors.New("管理后台地址（adminBaseUrl）未配置，无法生成邀请链接")
 	}
+	activitySlug := payload.ActivitySlug
+	if activitySlug == "" {
+		// Backward compatibility for invitations queued before activitySlug became part
+		// of InvitePayload. Activity slugs are immutable, so the live value is safe.
+		var activity model.Activity
+		if err := w.deps.DB.WithContext(ctx).Select("slug").First(&activity, task.ActivityID).Error; err != nil {
+			return "", "", err
+		}
+		activitySlug = activity.Slug
+	}
 	templateType := model.TemplateInviteAdmin
 	if payload.Role == model.MemberRoleOwner {
 		templateType = model.TemplateInviteOwner
@@ -442,6 +452,7 @@ func (w *Worker) renderInvite(ctx context.Context, task *model.MailTask, payload
 		"inviteeName":   payload.InviteeName,
 		"inviteeEmail":  payload.InviteeEmail,
 		"activityTitle": payload.ActivityTitle,
+		"activitySlug":  activitySlug,
 		"inviteUrl":     adminBase + "/invite/" + payload.Token,
 		"expiresAt":     expiresAtText(payload.ExpiresAt),
 		"siteName":      w.deps.Settings.Get(ctx, settings.KeySiteName),

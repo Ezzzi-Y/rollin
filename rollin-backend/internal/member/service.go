@@ -387,10 +387,11 @@ func (s *service) queueInviteMail(ctx context.Context, tx *gorm.DB, role string,
 	}
 	// Render context for the P3 worker; the raw one-shot token travels with the task
 	// because invite_token only stores the hash (08 notes §8).
-	var activityTitle string
+	var activityTitle, activitySlug string
 	var activityRow model.Activity
 	if err := tx.WithContext(ctx).First(&activityRow, activityID).Error; err == nil {
 		activityTitle = activityRow.Title
+		activitySlug = activityRow.Slug
 	}
 	if err := s.deps.Mail.QueueInviteMail(ctx, tx, scope, activityID, inviteTokenID, user.Email, mail.InvitePayload{
 		Token:         rawToken,
@@ -398,6 +399,7 @@ func (s *service) queueInviteMail(ctx context.Context, tx *gorm.DB, role string,
 		InviteeName:   user.Name,
 		InviteeEmail:  user.Email,
 		ActivityTitle: activityTitle,
+		ActivitySlug:  activitySlug,
 		ExpiresAt:     expires,
 	}); err != nil {
 		return false, err

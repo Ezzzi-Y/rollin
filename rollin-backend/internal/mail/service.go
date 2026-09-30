@@ -70,6 +70,7 @@ type InvitePayload struct {
 	InviteeName   string    `json:"inviteeName"`
 	InviteeEmail  string    `json:"inviteeEmail"`
 	ActivityTitle string    `json:"activityTitle"`
+	ActivitySlug  string    `json:"activitySlug"`
 	ExpiresAt     time.Time `json:"expiresAt"`
 }
 
