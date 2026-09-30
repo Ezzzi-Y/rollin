@@ -260,11 +260,11 @@ section.lab-reveal.is-settled .offer-face--back{display:none}
 .offer-letter__confirm{--ol-line:#ef7d13;--ol-fill:#fd9c3f;
   position:relative;display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:clamp(12px,1.6vw,22px);align-items:start;
   border:2px solid var(--ol-line);border-radius:clamp(12px,1.4vw,18px);padding:clamp(14px,1.6vw,22px)}
-.offer-letter.is-accepted-state .offer-letter__confirm{--ol-line:#20ad63;--ol-fill:#42df7c}
+.offer-letter.is-accepted-state .offer-letter__confirm{--ol-line:#20ad63;--ol-fill:#42df7c;grid-template-columns:minmax(0,1fr)}
 .offer-letter.is-accepted-state .offer-letter__notice{display:none}
 .offer-letter__confirm-main{display:grid;justify-items:start;gap:clamp(8px,1vw,12px)}
 .offer-letter__confirm-lead{margin:0;font-weight:800;color:#22160a}
-.offer-letter__confirm-done{display:none;margin:0;font-weight:800;color:#22160a}
+.offer-letter__confirm-done{display:none;margin:0;font-weight:800;color:#22160a;white-space:pre-wrap;overflow-wrap:anywhere}
 .offer-letter__confirm-hint{display:none;margin:0;font-weight:700;color:#a02c0c}
 .offer-letter__confirm-hint.is-on{display:block}
 /* 结果态（接受 / 拒绝 / 过期 / 失效）：左栏居中，只留结果那一行 + 变圆的那个按钮 */
@@ -279,6 +279,7 @@ section.lab-reveal.is-settled .offer-face--back{display:none}
 .offer-letter__decline-feedback button{justify-self:end;padding:7px 14px;border:0;border-radius:999px;background:#a02c0c;color:#fff;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
 .offer-letter__decline-feedback button:disabled{opacity:.55;cursor:not-allowed}
 .offer-letter__cta-row{display:flex;flex-wrap:wrap;align-items:center;gap:clamp(10px,1.2vw,18px)}
+.offer-letter.is-accepted-state .offer-letter__cta-row{display:none}
 /* 已经变圆的那一个留着，另一个收起来 */
 .offer-letter__cta-row.is-resolved .offer-letter__cta:not(.is-accepted):not(.is-declined){display:none}
 /* 失效 / 放弃 / 过期：整张卡的所有框统一变灰，按钮不再出现 */
@@ -1036,7 +1037,7 @@ section.lab-reveal.is-settled .offer-face--back{display:none}
             <button type="button" data-decline-reason-submit>提交反馈</button>
           </div>
           <!-- 两个按钮同款（黑底 + 三层彩色波浪，跟 #sec-directions 那条一样）：
-               点接受 → 缩成绿色圆形对勾；点拒绝 → 缩成红色圆形叉号。 -->
+               接受成功后隐藏按钮区域；点拒绝后缩成红色圆形叉号。 -->
           <div class="offer-letter__cta-row">
             <button type="button" class="offer-letter__cta" data-offer-accept>
               <svg class="shape-overlays" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
