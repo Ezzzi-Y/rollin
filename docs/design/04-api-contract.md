@@ -570,13 +570,20 @@ POST /api/activities/{slug}/mail-tasks/{id}/retry
 权限 `[O]/[A]`。约束：任务 `FAILED`；活动 ACTIVE；业务对象仍可发（Offer PENDING 且未过期 / 邀请 PENDING 未过期）→ 否则 `CONFLICT`（终态业务对象的重试拒绝并提示走对应流程）。
 响应 `202`：`{ "id": 77, "status": "PENDING" }`。审计 `MAIL_TASK_REQUEUED`。
 
-### 5.17 归档 / 恢复递补
+### 5.17 归档 / 暂停及恢复递补
 
 ```
 POST /api/activities/{slug}/archive
 ```
 权限 `[O]`。前置：`status='ACTIVE'` 且 PENDING Offer 计数 = 0（否则 `CONFLICT`，提示先处理待确认 Offer）。终态。
 响应 `200`：`{ "slug": "tech-2026", "status": "ARCHIVED" }`。审计 `ACTIVITY_ARCHIVED`。
+
+```
+POST /api/activities/{slug}/refill/pause
+```
+权限 `[O]`。约束：`offerMode='AUTO'`、`status='ACTIVE'`、正式录取已启动；重复暂停幂等成功。
+行为：活动锁内设置 `refill_paused=1`。现有 Offer、Token 与邮件任务保持不变；后续空额只记录 `refill_intent`，不执行补位。
+响应 `200`：`{ "refillPaused": true }`。审计 `REFILL_PAUSED`。
 
 ```
 POST /api/activities/{slug}/refill/resume

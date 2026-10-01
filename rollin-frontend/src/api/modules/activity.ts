@@ -2,7 +2,7 @@
  * 活动工作区接口（契约 §5 / §6 / §9.1，docs/design/04-api-contract.md）：
  * - Dashboard 统计（§5.1）、候选人（§5.2–5.4）、排名（§5.5–5.6）、启动录取（§5.7）
  * - 活动设置（§5.8–5.10）、成员管理（§5.11）、活动 SMTP（§5.12）、邮件模板（§5.13）
- * - Import Token（§5.14）、审计日志（§5.15）、邮件任务（§5.16）、归档 / 恢复递补（§5.17）
+ * - Import Token（§5.14）、审计日志（§5.15）、邮件任务（§5.16）、归档 / 暂停及恢复递补（§5.17）
  * - Offer 管理（§6.1–6.3）、候选人 XLSX 导出（§9.1）
  *
  * 授权按 ActivityMember 角色在后端逐端点强制（[O]=OWNER、[A]=ADMIN，O 恒满足 A）；
@@ -599,7 +599,7 @@ export function retryMailTask(slug: string, id: number): Promise<RetryMailTaskRe
   return http.post(`/api/activities/${encodeURIComponent(slug)}/mail-tasks/${id}/retry`)
 }
 
-// ---------- §5.17 归档 / 恢复递补 ----------
+// ---------- §5.17 归档 / 暂停及恢复递补 ----------
 
 export interface ArchiveResponse {
   slug: string
@@ -618,6 +618,15 @@ export const ARCHIVE_CONFIRMATION = '确认归档'
  */
 export function archiveActivity(slug: string, confirmation: string): Promise<ArchiveResponse> {
   return http.post(`/api/activities/${encodeURIComponent(slug)}/archive`, { confirmation })
+}
+
+export interface PauseRefillResponse {
+  refillPaused: true
+}
+
+/** 暂停递补（POST /api/activities/{slug}/refill/pause）[O]；仅已启动的 AUTO 活动 */
+export function pauseRefill(slug: string): Promise<PauseRefillResponse> {
+  return http.post(`/api/activities/${encodeURIComponent(slug)}/refill/pause`)
 }
 
 export interface ResumeRefillResponse {

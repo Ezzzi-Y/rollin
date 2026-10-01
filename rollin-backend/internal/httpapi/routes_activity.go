@@ -98,7 +98,9 @@ func (s *Server) mountActivity(r chi.Router) {
 				// §5.7 启动正式录取（P5，OWNER，幂等重复调用）
 				ws.With(s.requireMember(policy.OpWrite, model.MemberRoleOwner)).
 					Post("/admission/start", s.admissionStart)
-				// §5.17 恢复递补（P5，OWNER，D4，AUTO only）
+				// §5.17 暂停 / 恢复递补（OWNER，AUTO only）
+				ws.With(s.requireMember(policy.OpWrite, model.MemberRoleOwner)).
+					Post("/refill/pause", s.refillPause)
 				ws.With(s.requireMember(policy.OpWrite, model.MemberRoleOwner)).
 					Post("/refill/resume", s.refillResume)
 				// §5.8–§5.10 活动设置（P5）
@@ -236,7 +238,16 @@ func (s *Server) admissionStart(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ---------- §5.17 恢复递补（P5, D4） ----------
+// ---------- §5.17 暂停 / 恢复递补 ----------
+
+func (s *Server) refillPause(w http.ResponseWriter, r *http.Request) {
+	scope, _ := activityScopeFrom(r.Context())
+	if err := s.deps.Activity.PauseRefill(r.Context(), scope.Principal.ID, scope.Activity.Slug); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"refillPaused": true})
+}
 
 func (s *Server) refillResume(w http.ResponseWriter, r *http.Request) {
 	scope, _ := activityScopeFrom(r.Context())

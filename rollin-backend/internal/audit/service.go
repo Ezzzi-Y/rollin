@@ -54,6 +54,7 @@ const (
 	ActionOfferEmailResent           = "OFFER_EMAIL_RESENT"
 	ActionMailTaskRequeued           = "MAIL_TASK_REQUEUED"
 	ActionOfferSpecialIssued         = "OFFER_SPECIAL_ISSUED"
+	ActionRefillPaused               = "REFILL_PAUSED"
 	ActionRefillResumed              = "REFILL_RESUMED"
 	ActionOfferAccepted              = "OFFER_ACCEPTED"
 	ActionOfferDeclined              = "OFFER_DECLINED"

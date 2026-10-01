@@ -13,6 +13,7 @@ import {
   issueSpecialOffer,
   listCandidates,
   listOfferBatches,
+  pauseRefill,
   resendOfferEmail,
   resumeRefill,
   startAdmission,
@@ -859,7 +860,50 @@ function StartAdmissionCard() {
   )
 }
 
-// ---------- 恢复递补卡片（契约 §5.17；OWNER、AUTO、refill_paused=1） ----------
+// ---------- 暂停 / 恢复递补（契约 §5.17；OWNER、AUTO） ----------
+
+function PauseRefillControl() {
+  const ws = useActivityWorkspace()
+  const queryClient = useQueryClient()
+  const [confirmOpen, setConfirmOpen] = useState(false)
+
+  const mutation = useMutation({
+    mutationFn: () => pauseRefill(ws.slug),
+    onSuccess: () => {
+      toast.success('自动递补已暂停', {
+        description: '现有 Offer 保持有效；之后释放或新增的空额将在恢复递补时统一补齐。',
+      })
+      void queryClient.invalidateQueries({ queryKey: ['activity', ws.slug] })
+      setConfirmOpen(false)
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, '暂停自动递补失败，请稍后重试'))
+    },
+  })
+
+  if (!ws.isOwner) return null
+  return (
+    <>
+      <Button
+        variant="outline"
+        disabled={ws.readOnly || mutation.isPending}
+        onClick={() => setConfirmOpen(true)}
+      >
+        <PauseCircle className="size-4" aria-hidden />
+        {mutation.isPending ? '暂停中…' : '暂停自动递补'}
+      </Button>
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="确认暂停自动递补？"
+        description="暂停后，现有 Offer 仍可查看、接受或放弃，已排队的现有 Offer 邮件也不受影响；候选人放弃、Offer 超时、跨活动失格或增加容量产生的空额将不再自动补位，直至负责人恢复递补。"
+        confirmText="确认暂停"
+        loading={mutation.isPending}
+        onConfirm={() => mutation.mutate()}
+      />
+    </>
+  )
+}
 
 function ResumeRefillCard() {
   const ws = useActivityWorkspace()
@@ -889,7 +933,7 @@ function ResumeRefillCard() {
           自动递补已暂停
         </CardTitle>
         <CardDescription className="text-amber-900/80">
-          活动曾被禁用（或禁用后重新激活），释放的名额不会自动补位。恢复后将立即按 rank
+          自动递补当前处于暂停状态，现有 Offer 保持有效，但释放或新增的名额不会自动补位。恢复后将立即按 rank
           顺序补齐全部空额：跳过并标记已接受其他活动 Offer 的候选人；已放弃 / 已超时留下的空额将一次性补发 Offer 并入队邮件。
         </CardDescription>
       </CardHeader>
@@ -935,6 +979,7 @@ function OffersContent() {
 
   const info = ws.info
   const frozen = info?.rankingFrozen ?? false
+  const isAuto = info?.offerMode === 'AUTO'
   const isManual = info?.offerMode === 'MANUAL'
   const isBatch = info?.offerMode === 'BATCH'
 
@@ -989,9 +1034,10 @@ function OffersContent() {
     <>
       <PageHeader
         title="Offer 管理"
-        description="当前与历史 Offer 进度；启动录取、恢复递补与人工发放入口（需求 §33–§41）"
+        description="当前与历史 Offer 进度；启动录取、暂停或恢复递补与人工发放入口（需求 §33–§41）"
         actions={
           <>
+            {isAuto && frozen && !info?.refillPaused ? <PauseRefillControl /> : null}
             {isBatch && frozen ? (
               <Button
                 disabled={batchDisabledReason !== null}

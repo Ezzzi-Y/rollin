@@ -117,6 +117,8 @@ type Service interface {
 	// first-issue loop (04 §5.7). P5 (with ranking + offer collaborators). MANUAL and
 	// BATCH only freeze — BATCH issues through IssueBatch clicks instead.
 	StartAdmission(ctx context.Context, ownerUserID uint64, slug string) (StartResult, error)
+	// PauseRefill stops future AUTO refills without changing existing offers or mail tasks.
+	PauseRefill(ctx context.Context, ownerUserID uint64, slug string) error
 	// ResumeRefill clears refill_paused and refills by rank (D4). P5.
 	ResumeRefill(ctx context.Context, ownerUserID uint64, slug string) (ResumeRefillResult, error)
 	// IssueBatch issues one BATCH-mode batch: top-`limit` WAITING applications by rank,
@@ -875,6 +877,54 @@ func (s *service) StartAdmission(ctx context.Context, ownerUserID uint64, slug s
 		return StartResult{}, txErr
 	}
 	return result, nil
+}
+
+// PauseRefill stops future AUTO refill attempts while leaving already-issued offers and
+// their mail tasks untouched. Refill intents created while paused remain pending and are
+// consumed when the OWNER resumes. Repeated pause calls are idempotent.
+func (s *service) PauseRefill(ctx context.Context, ownerUserID uint64, slug string) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		act, err := s.repo.FindBySlugForUpdate(ctx, tx, slug)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errs.NotFound("活动不存在")
+		}
+		if err != nil {
+			return err
+		}
+		if act.OfferMode != model.OfferModeAuto {
+			return errs.Conflict("当前发放模式没有自动递补，无需暂停")
+		}
+		switch act.Status {
+		case model.ActivityDisabled:
+			return errs.New(errs.CodeActivityDisabled, "活动已被禁用，无法暂停递补")
+		case model.ActivityArchived:
+			return errs.New(errs.CodeActivityArchived, "活动已归档，操作只读")
+		}
+		if act.StartedAt == nil || !act.RankingFrozen {
+			return errs.Conflict("正式录取尚未启动，无法暂停自动递补")
+		}
+		if act.RefillPaused {
+			return nil
+		}
+		if err := s.repo.UpdateColumns(ctx, tx, act.ID, map[string]any{"refill_paused": true}); err != nil {
+			return err
+		}
+		info := audit.FromContext(ctx)
+		return s.deps.Audit.Record(tx, audit.Entry{
+			Scope:         model.ScopeActivity,
+			ActivityID:    act.ID,
+			ActorType:     model.ActorOwner,
+			ActorUserID:   &ownerUserID,
+			Action:        audit.ActionRefillPaused,
+			TargetType:    "ACTIVITY",
+			TargetID:      &act.ID,
+			ChangeSummary: "暂停自动递补（现有 Offer 保持有效，后续空额等待恢复）",
+			Detail:        []byte(`{"refillPaused":true}`),
+			RequestID:     info.RequestID,
+			IPAddress:     info.IPAddress,
+			UserAgent:     info.UserAgent,
+		})
+	})
 }
 
 // ResumeRefill implements D4 / 04 §5.17 (AUTO only): settle the expired PENDING offers
