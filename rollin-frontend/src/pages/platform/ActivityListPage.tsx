@@ -1,10 +1,15 @@
 import { useState } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, RefreshCw, Search, ShieldOff } from 'lucide-react'
+import { Pause, Plus, RefreshCw, Search, ShieldOff } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { apiErrorMessage } from '@/api/errorMessages'
-import { activateActivity, disableActivity, listActivities } from '@/api/modules/platform'
+import {
+  activateActivity,
+  disableActivity,
+  listActivities,
+  pauseAllAutoRefills,
+} from '@/api/modules/platform'
 import type { PlatformActivity } from '@/api/modules/platform'
 import type { ActivityStatus } from '@/api/types'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
@@ -89,6 +94,7 @@ export function ActivityListPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [inviteFor, setInviteFor] = useState<string | null>(null)
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null)
+  const [pauseAllOpen, setPauseAllOpen] = useState(false)
 
   const listQuery = useQuery({
     queryKey: ['platform', 'activities', { page, pageSize: PAGE_SIZE, status: statusFilter, keyword }],
@@ -115,6 +121,32 @@ export function ActivityListPage() {
     },
   })
 
+  const pauseAllMutation = useMutation({
+    mutationFn: pauseAllAutoRefills,
+    onSuccess: (result) => {
+      setPauseAllOpen(false)
+      void queryClient.invalidateQueries({ queryKey: ['platform', 'activities'] })
+      if (result.pausedCount === 0) {
+        toast.info('没有需要暂停的 AUTO 方向', {
+          description:
+            result.eligibleCount === 0
+              ? '当前没有处于运行中且已启动正式录取的 AUTO 活动。'
+              : `${result.alreadyPausedCount} 个符合条件的 AUTO 活动均已处于暂停状态。`,
+        })
+        return
+      }
+      toast.success(`已暂停 ${result.pausedCount} 个 AUTO 方向`, {
+        description:
+          result.alreadyPausedCount > 0
+            ? `另有 ${result.alreadyPausedCount} 个方向原本已经暂停；现有 Offer 与邮件任务不受影响。`
+            : '现有 Offer 与邮件任务不受影响，后续空额将等待负责人恢复递补。',
+      })
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, '批量暂停自动递补失败，请稍后重试'))
+    },
+  })
+
   const data = listQuery.data
   const items = data?.items ?? []
   const stats = data?.stats
@@ -136,10 +168,21 @@ export function ActivityListPage() {
         title="活动管理"
         description="管理平台全部活动与负责人；不展示活动内部招新业务数据"
         actions={
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" aria-hidden />
-            新建活动
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pauseAllMutation.isPending}
+              onClick={() => setPauseAllOpen(true)}
+            >
+              <Pause className="size-4" aria-hidden />
+              暂停全部 AUTO 递补
+            </Button>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" aria-hidden />
+              新建活动
+            </Button>
+          </div>
         }
       />
 
@@ -239,7 +282,16 @@ export function ActivityListPage() {
                       <StatusBadge status={activity.status} />
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
-                      {OFFER_MODE_LABEL[activity.offerMode]}
+                      <span>{OFFER_MODE_LABEL[activity.offerMode]}</span>
+                      {activity.offerMode === 'AUTO' ? (
+                        <span className="block text-xs text-muted-foreground">
+                          {activity.startedAt === null
+                            ? '尚未启动录取'
+                            : activity.refillPaused
+                              ? '递补已暂停'
+                              : '递补运行中'}
+                        </span>
+                      ) : null}
                     </TableCell>
                     <TableCell className="tabular-nums">{activity.quota}</TableCell>
                     <TableCell className="hidden lg:table-cell">
@@ -341,6 +393,16 @@ export function ActivityListPage() {
           hasActiveOwner: item.owner?.memberStatus === 'ACTIVE',
         }))}
         defaultSlug={inviteFor ?? undefined}
+      />
+
+      <ConfirmDialog
+        open={pauseAllOpen}
+        onOpenChange={setPauseAllOpen}
+        title="暂停全部 AUTO 自动递补？"
+        description="将暂停平台内所有处于运行中、已启动正式录取的 AUTO 活动。现有 Offer 仍可接受或放弃，已排队邮件不会取消；之后释放或新增的空额不再自动补位，直至各活动负责人恢复递补。"
+        confirmText="确认全部暂停"
+        loading={pauseAllMutation.isPending}
+        onConfirm={() => pauseAllMutation.mutate()}
       />
 
       <ConfirmDialog

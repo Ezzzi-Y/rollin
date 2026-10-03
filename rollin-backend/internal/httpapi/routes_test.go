@@ -162,7 +162,7 @@ func sessionCookies(rec *httptest.ResponseRecorder) []*http.Cookie {
 // TestPlatformFlow walks the super-admin journey end to end: login → me → create
 // activity → list with stats → owner invite (SMTP gate) → disable owner.
 func TestPlatformFlow(t *testing.T) {
-	handler, sessions, _ := newTestServer(t)
+	handler, sessions, db := newTestServer(t)
 
 	// Login (rate limiter absent in tests → no throttling).
 	rec := do(t, handler, http.MethodPost, "/api/platform/auth/login",
@@ -209,6 +209,31 @@ func TestPlatformFlow(t *testing.T) {
 	stats, ok := body["stats"].(map[string]any)
 	if !ok || stats["active"].(float64) != 1 {
 		t.Fatalf("stats = %v", body["stats"])
+	}
+	if !strings.Contains(rec.Body.String(), `"refillPaused":false`) {
+		t.Fatalf("list does not expose refill pause state: %s", rec.Body.String())
+	}
+
+	// The platform emergency stop pauses every running, started AUTO activity without
+	// requiring an OWNER session.
+	now := time.Now().UTC()
+	if err := db.Model(&model.Activity{}).Where("slug = ?", "tech-2026").Updates(map[string]any{
+		"ranking_frozen": true,
+		"started_at":     now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	rec = do(t, handler, http.MethodPost, "/api/platform/activities/refill/pause-all", "", cookies, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pause all auto refills = %d %s", rec.Code, rec.Body.String())
+	}
+	body = decode(t, rec)
+	if body["eligibleCount"].(float64) != 1 || body["pausedCount"].(float64) != 1 || body["alreadyPausedCount"].(float64) != 0 {
+		t.Fatalf("pause all result = %v", body)
+	}
+	var paused model.Activity
+	if err := db.Where("slug = ?", "tech-2026").First(&paused).Error; err != nil || !paused.RefillPaused {
+		t.Fatalf("activity not paused: row=%+v err=%v", paused, err)
 	}
 
 	// Disable + re-activate keep the D4 invariant visible in the response.

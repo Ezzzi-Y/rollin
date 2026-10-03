@@ -26,6 +26,7 @@ import (
 //	POST /api/platform/activities                             (§3.2, owner optional)
 //	POST /api/platform/activities/{slug}/disable              (§3.3)
 //	POST /api/platform/activities/{slug}/activate             (§3.3)
+//	POST /api/platform/activities/refill/pause-all             (§3.6)
 //	GET  /api/platform/activities/{slug}/owners               (§2.2, member config view)
 //	POST /api/platform/activities/{slug}/owners               (§3.4)
 //	POST /api/platform/activities/{slug}/owners/{userId}/invitation/resend (§3.5)
@@ -46,6 +47,7 @@ func (s *Server) mountPlatform(r chi.Router) {
 			admin.Post("/smtp/test", s.platformSMTPTest)
 			admin.Get("/activities", s.platformActivitiesList)
 			admin.Post("/activities", s.platformActivitiesCreate)
+			admin.Post("/activities/refill/pause-all", s.platformAutoRefillsPauseAll)
 			admin.Post("/activities/{slug}/disable", s.platformActivityDisable)
 			admin.Post("/activities/{slug}/activate", s.platformActivityActivate)
 			admin.Get("/activities/{slug}/owners", s.platformOwnersList)
@@ -202,6 +204,7 @@ type platformActivityItemJSON struct {
 	OfferExpireHours int                       `json:"offerExpireHours"`
 	Owner            *platformOwnerSummaryJSON `json:"owner"`
 	StartedAt        *string                   `json:"startedAt"`
+	RefillPaused     bool                      `json:"refillPaused"`
 	CreatedAt        string                    `json:"createdAt"`
 }
 
@@ -230,6 +233,7 @@ func (s *Server) platformActivitiesList(w http.ResponseWriter, r *http.Request) 
 			OfferMode:        item.Activity.OfferMode,
 			OfferExpireHours: item.Activity.OfferExpireHours,
 			StartedAt:        rfc3339Ptr(item.Activity.StartedAt),
+			RefillPaused:     item.Activity.RefillPaused,
 			CreatedAt:        rfc3339(item.Activity.CreatedAt),
 		}
 		if item.Owner != nil {
@@ -313,6 +317,22 @@ func (s *Server) platformActivityActivate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"slug": updated.Slug, "status": updated.Status})
+}
+
+// platformAutoRefillsPauseAll is the SUPER_ADMIN emergency stop for automatic refill.
+// It intentionally does not disable activities, revoke offers, or cancel queued mail.
+func (s *Server) platformAutoRefillsPauseAll(w http.ResponseWriter, r *http.Request) {
+	principal, _ := principalFrom(r.Context())
+	result, err := s.deps.Activity.PauseAllAutoRefills(r.Context(), principal.ID)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"eligibleCount":      result.EligibleCount,
+		"pausedCount":        result.PausedCount,
+		"alreadyPausedCount": result.AlreadyPausedCount,
+	})
 }
 
 // ---------- §2.2/§3.4/§3.5 OWNER 配置视图 / 邀请 / 重发 / 停用 ----------

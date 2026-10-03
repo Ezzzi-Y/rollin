@@ -1,6 +1,6 @@
 /**
  * 平台后台接口（契约 §2.4–2.5、§3），仅超级管理员可访问（后端逐端点强制校验）：
- * - 活动列表（分页 + 数量统计）、创建活动、禁用 / 重新激活
+ * - 活动列表（分页 + 数量统计）、创建活动、禁用 / 重新激活、批量暂停 AUTO 递补
  * - 负责人邀请 / 重发邀请 / 停用负责人
  * - 平台 SMTP 配置 / 测试发送（密码服务端加密存储，GET 永不回显密码）
  * - 平台参数（settings）
@@ -29,6 +29,7 @@ export interface PlatformActivity {
   offerExpireHours: number
   owner: PlatformOwnerSummary | null
   startedAt: string | null
+  refillPaused: boolean
   createdAt: string
 }
 
@@ -104,6 +105,20 @@ export function disableActivity(slug: string): Promise<ActivityStatusResponse> {
 /** 重新激活活动（POST /api/platform/activities/{slug}/activate）；对 ARCHIVED 返回 CONFLICT */
 export function activateActivity(slug: string): Promise<ActivityStatusResponse> {
   return http.post(`/api/platform/activities/${encodeURIComponent(slug)}/activate`)
+}
+
+export interface PauseAllAutoRefillsResponse {
+  /** 当前处于 ACTIVE、AUTO 且已启动的活动数（含原本已暂停的活动） */
+  eligibleCount: number
+  /** 本次实际由运行中切换为暂停的活动数 */
+  pausedCount: number
+  /** 调用前已经暂停、因此未重复写审计的活动数 */
+  alreadyPausedCount: number
+}
+
+/** 平台级暂停所有已启动 AUTO 活动的自动递补；不撤销现有 Offer，也不取消邮件 */
+export function pauseAllAutoRefills(): Promise<PauseAllAutoRefillsResponse> {
+  return http.post('/api/platform/activities/refill/pause-all')
 }
 
 // ---------- 负责人管理（契约 §3.4–3.5） ----------

@@ -175,7 +175,7 @@ GET /api/platform/activities?page=1&pageSize=20&status=ACTIVE&keyword=技术
 ```json
 {
   "items": [
-    { "slug": "tech-2026", "title": "技术部招新", "description": "...", "status": "ACTIVE", "quota": 20, "offerMode": "AUTO", "offerExpireHours": 72, "owner": { "userId": 7, "name": "李负责", "email": "li@example.edu.cn", "memberStatus": "ACTIVE" }, "startedAt": null, "createdAt": "2026-09-01T08:00:00Z" }
+    { "slug": "tech-2026", "title": "技术部招新", "description": "...", "status": "ACTIVE", "quota": 20, "offerMode": "AUTO", "offerExpireHours": 72, "owner": { "userId": 7, "name": "李负责", "email": "li@example.edu.cn", "memberStatus": "ACTIVE" }, "startedAt": null, "refillPaused": false, "createdAt": "2026-09-01T08:00:00Z" }
   ],
   "page": 1, "pageSize": 20, "total": 12,
   "stats": { "total": 12, "active": 8, "disabled": 2, "archived": 2 }
@@ -239,6 +239,21 @@ POST /api/platform/activities/{slug}/owners/{userId}/disable
 ```
 响应 `200`：`{ "message": "owner disabled" }`。
 副作用：`activity_member.status=DISABLED`（当前活动作用域，非平台账户封禁）；其未发送邀请邮件任务取消；即时权限失效（Session 回查）。响应体同时返回 `memberStatus`。审计 `OWNER_DISABLED`。
+
+### 3.6 平台级暂停全部 AUTO 递补
+
+```
+POST /api/platform/activities/refill/pause-all
+```
+
+仅处理当前 `status=ACTIVE`、`offer_mode=AUTO`、正式录取已启动且排名已冻结的活动。已暂停活动计入 `eligibleCount`，但不重复更新或写审计；未启动、BATCH、MANUAL、DISABLED、ARCHIVED 活动均不改动。整个批量操作在一个事务内完成。
+
+响应 `200`：
+```json
+{ "eligibleCount": 8, "pausedCount": 6, "alreadyPausedCount": 2 }
+```
+
+暂停只阻止后续自动补位，不撤销现有 Offer、不取消已有邮件任务。每个本次新暂停的活动写一条 activity-scope `REFILL_PAUSED` 审计，actor 为 `SUPER_ADMIN`；恢复仍由对应活动负责人按既有流程执行。
 
 ---
 

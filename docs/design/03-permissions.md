@@ -55,6 +55,7 @@
 | `POST /api/platform/activities`（创建活动） | ✅ | ❌ | ❌ | — |
 | `POST /api/platform/activities/{slug}/disable` | ✅ | ❌ | ❌ | — |
 | `POST /api/platform/activities/{slug}/activate` | ✅ | ❌ | ❌ | — |
+| `POST /api/platform/activities/refill/pause-all`（批量暂停已启动 AUTO 递补） | ✅ | ❌ | ❌ | — |
 | `POST /api/platform/activities/{slug}/owners`（创建负责人邀请） | ✅ | ❌ | ❌ | — |
 | `POST /api/platform/activities/{slug}/owners/{userId}/disable`（停用负责人） | ✅ | ❌ | ❌ | — |
 | `POST /api/platform/activities/{slug}/owners/{userId}/invitation/resend`（重发负责人邀请） | ✅ | ❌ | ❌ | — |

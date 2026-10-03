@@ -119,6 +119,10 @@ type Service interface {
 	StartAdmission(ctx context.Context, ownerUserID uint64, slug string) (StartResult, error)
 	// PauseRefill stops future AUTO refills without changing existing offers or mail tasks.
 	PauseRefill(ctx context.Context, ownerUserID uint64, slug string) error
+	// PauseAllAutoRefills is the platform-level emergency stop for every currently
+	// running, started AUTO activity. It is idempotent and leaves existing offers and
+	// mail tasks untouched.
+	PauseAllAutoRefills(ctx context.Context, superAdminID uint64) (PauseAllAutoRefillsResult, error)
 	// ResumeRefill clears refill_paused and refills by rank (D4). P5.
 	ResumeRefill(ctx context.Context, ownerUserID uint64, slug string) (ResumeRefillResult, error)
 	// IssueBatch issues one BATCH-mode batch: top-`limit` WAITING applications by rank,
@@ -157,6 +161,15 @@ type ResumeRefillResult struct {
 	OffersIssued int64
 	Occupied     int64
 	Quota        int
+}
+
+// PauseAllAutoRefillsResult reports the platform-wide pause outcome. EligibleCount
+// includes already-paused activities so callers can distinguish a no-op from an empty
+// platform.
+type PauseAllAutoRefillsResult struct {
+	EligibleCount      int64
+	PausedCount        int64
+	AlreadyPausedCount int64
 }
 
 type service struct {
@@ -925,6 +938,61 @@ func (s *service) PauseRefill(ctx context.Context, ownerUserID uint64, slug stri
 			UserAgent:     info.UserAgent,
 		})
 	})
+}
+
+// PauseAllAutoRefills atomically pauses every ACTIVE AUTO activity whose admission has
+// started. Pre-start activities are excluded because they cannot issue or refill yet;
+// DISABLED activities are already stopped by their lifecycle gate and ARCHIVED
+// activities are immutable. Each newly paused activity receives its own activity-scope
+// audit row so the responsible OWNER can see the platform intervention.
+func (s *service) PauseAllAutoRefills(ctx context.Context, superAdminID uint64) (PauseAllAutoRefillsResult, error) {
+	var result PauseAllAutoRefillsResult
+	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var activities []model.Activity
+		if err := tx.WithContext(ctx).
+			Clauses(locking).
+			Where("status = ? AND offer_mode = ? AND started_at IS NOT NULL AND ranking_frozen = ?",
+				model.ActivityActive, model.OfferModeAuto, true).
+			Order("id ASC").
+			Find(&activities).Error; err != nil {
+			return err
+		}
+
+		result.EligibleCount = int64(len(activities))
+		info := audit.FromContext(ctx)
+		for i := range activities {
+			act := &activities[i]
+			if act.RefillPaused {
+				result.AlreadyPausedCount++
+				continue
+			}
+			if err := s.repo.UpdateColumns(ctx, tx, act.ID, map[string]any{"refill_paused": true}); err != nil {
+				return err
+			}
+			if err := s.deps.Audit.Record(tx, audit.Entry{
+				Scope:         model.ScopeActivity,
+				ActivityID:    act.ID,
+				ActorType:     model.ActorSuperAdmin,
+				ActorUserID:   &superAdminID,
+				Action:        audit.ActionRefillPaused,
+				TargetType:    "ACTIVITY",
+				TargetID:      &act.ID,
+				ChangeSummary: "超级管理员批量暂停自动递补（现有 Offer 保持有效，后续空额等待恢复）",
+				Detail:        []byte(`{"refillPaused":true,"source":"PLATFORM_BULK"}`),
+				RequestID:     info.RequestID,
+				IPAddress:     info.IPAddress,
+				UserAgent:     info.UserAgent,
+			}); err != nil {
+				return err
+			}
+			result.PausedCount++
+		}
+		return nil
+	})
+	if txErr != nil {
+		return PauseAllAutoRefillsResult{}, txErr
+	}
+	return result, nil
 }
 
 // ResumeRefill implements D4 / 04 §5.17 (AUTO only): settle the expired PENDING offers
