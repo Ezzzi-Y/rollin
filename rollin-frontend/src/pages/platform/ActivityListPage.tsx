@@ -131,15 +131,15 @@ export function ActivityListPage() {
           description:
             result.eligibleCount === 0
               ? '当前没有处于运行中且已启动正式录取的 AUTO 活动。'
-              : `${result.alreadyPausedCount} 个符合条件的 AUTO 活动均已处于暂停状态。`,
+              : `${result.alreadyPausedCount} 个符合条件的 AUTO 活动均已被系统管理员暂停。`,
         })
         return
       }
       toast.success(`已暂停 ${result.pausedCount} 个 AUTO 方向`, {
         description:
           result.alreadyPausedCount > 0
-            ? `另有 ${result.alreadyPausedCount} 个方向原本已经暂停；现有 Offer 与邮件任务不受影响。`
-            : '现有 Offer 与邮件任务不受影响，后续空额将等待负责人恢复递补。',
+            ? `另有 ${result.alreadyPausedCount} 个方向原本已被系统管理员暂停；现有 Offer 与邮件任务不受影响。`
+            : '现有 Offer 与邮件任务不受影响，活动负责人无法开启递补。',
       })
     },
     onError: (error) => {
@@ -288,7 +288,7 @@ export function ActivityListPage() {
                           {activity.startedAt === null
                             ? '尚未启动录取'
                             : activity.refillPaused
-                              ? '递补已暂停'
+                              ? (activity.refillPausedByPlatform ? '系统管理员已暂停递补' : '递补已暂停')
                               : '递补运行中'}
                         </span>
                       ) : null}
@@ -399,7 +399,7 @@ export function ActivityListPage() {
         open={pauseAllOpen}
         onOpenChange={setPauseAllOpen}
         title="暂停全部 AUTO 自动递补？"
-        description="将暂停平台内所有处于运行中、已启动正式录取的 AUTO 活动。现有 Offer 仍可接受或放弃，已排队邮件不会取消；之后释放或新增的空额不再自动补位，直至各活动负责人恢复递补。"
+        description="将暂停平台内所有已启动正式录取的 AUTO 活动，包括负责人已暂停的活动。现有 Offer 仍可接受或放弃，已排队邮件不会取消；之后释放或新增的空额不再自动补位，活动负责人无法自行恢复递补。"
         confirmText="确认全部暂停"
         loading={pauseAllMutation.isPending}
         onConfirm={() => pauseAllMutation.mutate()}

@@ -92,7 +92,7 @@ func TestPauseAllAutoRefillsOnlyTouchesRunningStartedAutoActivities(t *testing.T
 	if err != nil {
 		t.Fatalf("pause all auto refills: %v", err)
 	}
-	if result.EligibleCount != 2 || result.PausedCount != 1 || result.AlreadyPausedCount != 1 {
+	if result.EligibleCount != 2 || result.PausedCount != 2 || result.AlreadyPausedCount != 0 {
 		t.Fatalf("result = %+v", result)
 	}
 
@@ -124,7 +124,32 @@ func TestPauseAllAutoRefillsOnlyTouchesRunningStartedAutoActivities(t *testing.T
 	if result.EligibleCount != 2 || result.PausedCount != 0 || result.AlreadyPausedCount != 2 {
 		t.Fatalf("repeat result = %+v", result)
 	}
-	if got := f.count(t, "audit_log", "action = ?", audit.ActionRefillPaused); got != 1 {
+	if got := f.count(t, "audit_log", "action = ?", audit.ActionRefillPaused); got != 2 {
 		t.Fatalf("repeat pause wrote duplicate audits: %d", got)
+	}
+}
+
+func TestPlatformPauseBlocksOwnerResume(t *testing.T) {
+	f := newAdmissionFixture(t, true)
+	ctx := context.Background()
+	act := f.seedActivity("platform-lock", model.OfferModeAuto, 1, false)
+	f.seedRanks(act.ID, 3)
+	f.start(act)
+	if err := f.svc.PauseRefill(ctx, 7, act.Slug); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.PauseAllAutoRefills(ctx, 42); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.ResumeRefill(ctx, 7, act.Slug); !errs.Is(err, errs.CodeForbidden) {
+		t.Fatalf("resume error = %v, want FORBIDDEN", err)
+	}
+	var row model.Activity
+	f.db.First(&row, act.ID)
+	if !row.RefillPaused || !row.RefillPausedByPlatform {
+		t.Fatal("platform pause was cleared")
+	}
+	if got := f.count("offer", "status = ?", model.OfferPending); got != 1 {
+		t.Fatalf("unexpected offers: %d", got)
 	}
 }

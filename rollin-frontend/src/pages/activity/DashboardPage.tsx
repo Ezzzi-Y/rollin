@@ -62,7 +62,9 @@ function DashboardAlerts() {
       key: 'refill',
       tone: 'amber',
       title: '自动递补已暂停：',
-      text: '释放的名额不会自动补位，需负责人确认后恢复递补。',
+      text: info.refillPausedByPlatform
+        ? '系统管理员已暂停自动递补，活动负责人无法开启，请联系系统管理员。'
+        : '释放的名额不会自动补位，需负责人确认后恢复递补。',
       to: `/a/${ws.slug}/offers`,
       linkText: '前往 Offer 管理',
       icon: PlayCircle,

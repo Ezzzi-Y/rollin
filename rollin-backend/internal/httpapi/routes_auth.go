@@ -241,6 +241,7 @@ func (s *Server) activityMe(w http.ResponseWriter, r *http.Request) {
 		"role":          scope.Role,
 		"memberStatus":  scope.MemberStatus,
 		"refillPaused":  scope.Activity.RefillPaused,
+        "refillPausedByPlatform": scope.Activity.RefillPausedByPlatform,
 		"rankingFrozen": scope.Activity.RankingFrozen,
 		"rankingDirty":  scope.Activity.RankingDirty,
 	})

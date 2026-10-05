@@ -205,6 +205,7 @@ type platformActivityItemJSON struct {
 	Owner            *platformOwnerSummaryJSON `json:"owner"`
 	StartedAt        *string                   `json:"startedAt"`
 	RefillPaused     bool                      `json:"refillPaused"`
+ RefillPausedByPlatform bool `json:"refillPausedByPlatform"`
 	CreatedAt        string                    `json:"createdAt"`
 }
 
@@ -234,6 +235,7 @@ func (s *Server) platformActivitiesList(w http.ResponseWriter, r *http.Request) 
 			OfferExpireHours: item.Activity.OfferExpireHours,
 			StartedAt:        rfc3339Ptr(item.Activity.StartedAt),
 			RefillPaused:     item.Activity.RefillPaused,
+ RefillPausedByPlatform: item.Activity.RefillPausedByPlatform,
 			CreatedAt:        rfc3339(item.Activity.CreatedAt),
 		}
 		if item.Owner != nil {

@@ -30,6 +30,7 @@ export interface PlatformActivity {
   owner: PlatformOwnerSummary | null
   startedAt: string | null
   refillPaused: boolean
+  refillPausedByPlatform: boolean
   createdAt: string
 }
 
@@ -110,9 +111,9 @@ export function activateActivity(slug: string): Promise<ActivityStatusResponse> 
 export interface PauseAllAutoRefillsResponse {
   /** 当前处于 ACTIVE、AUTO 且已启动的活动数（含原本已暂停的活动） */
   eligibleCount: number
-  /** 本次实际由运行中切换为暂停的活动数 */
+  /** 本次新增系统管理员暂停限制的活动数（含负责人已暂停的活动） */
   pausedCount: number
-  /** 调用前已经暂停、因此未重复写审计的活动数 */
+  /** 调用前已被系统管理员暂停、因此未重复写审计的活动数 */
   alreadyPausedCount: number
 }
 

@@ -520,6 +520,7 @@ func (s *Server) activityDashboard(w http.ResponseWriter, r *http.Request) {
 			"rankingFrozen":    act.RankingFrozen,
 			"startedAt":        rfc3339Ptr(act.StartedAt),
 			"refillPaused":     act.RefillPaused,
+            "refillPausedByPlatform": act.RefillPausedByPlatform,
 			"successMessage":   act.OfferSuccessMessage,
 		},
 		"stats": map[string]any{

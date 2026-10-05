@@ -16,15 +16,16 @@ type Activity struct {
 	// BatchSize is the BATCH-mode default issuance size ("每批人数"). 0 means "inherit
 	// the platform default (defaultBatchSize)" — activities created before BATCH existed
 	// or created with an empty input resolve it at read time.
-	BatchSize           int        `gorm:"column:batch_size;not null;default:0"`
-	OfferExpireHours    int        `gorm:"column:offer_expire_hours;not null;default:72"`
-	OfferSuccessMessage *string    `gorm:"column:offer_success_message;type:varchar(500)"`
-	RankingDirty        bool       `gorm:"column:ranking_dirty;not null;default:false"`
-	RankingFrozen       bool       `gorm:"column:ranking_frozen;not null;default:false"`
-	StartedAt           *time.Time `gorm:"column:started_at"`
-	RefillPaused        bool       `gorm:"column:refill_paused;not null;default:false"`
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	BatchSize              int        `gorm:"column:batch_size;not null;default:0"`
+	OfferExpireHours       int        `gorm:"column:offer_expire_hours;not null;default:72"`
+	OfferSuccessMessage    *string    `gorm:"column:offer_success_message;type:varchar(500)"`
+	RankingDirty           bool       `gorm:"column:ranking_dirty;not null;default:false"`
+	RankingFrozen          bool       `gorm:"column:ranking_frozen;not null;default:false"`
+	StartedAt              *time.Time `gorm:"column:started_at"`
+	RefillPaused           bool       `gorm:"column:refill_paused;not null;default:false"`
+	RefillPausedByPlatform bool       `gorm:"column:refill_paused_by_platform;not null;default:false"`
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 }
 
 func (Activity) TableName() string { return "activity" }

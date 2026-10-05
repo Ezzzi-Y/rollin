@@ -35,7 +35,8 @@ const (
 	// V4: BATCH offer mode (activity.offer_mode/batch_size, offer.source/batch_id,
 	// offer_batch) and audit_log.actor_candidate_id.
 	// V6: expand audit_log.user_agent for long enterprise mobile-browser UAs.
-	MinimumSchemaVersion = uint64(6)
+	// V7: persist platform-controlled refill pause restrictions.
+	MinimumSchemaVersion = uint64(7)
 )
 
 // Step is one ordered statement (or logical unit) inside a migration.
@@ -78,7 +79,7 @@ func (m Migration) Checksum() string {
 
 // All returns every registered migration in strict version order.
 func All() []Migration {
-	list := []Migration{v1(), v2(), v3(), v4(), v5(), v6()}
+	list := []Migration{v1(), v2(), v3(), v4(), v5(), v6(), v7()}
 	sort.Slice(list, func(i, j int) bool { return list[i].Version < list[j].Version })
 	return list
 }

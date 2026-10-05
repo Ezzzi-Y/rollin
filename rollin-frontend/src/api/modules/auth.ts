@@ -72,6 +72,7 @@ export interface ActivitySessionResponse {
 export interface ActivityMeResponse extends ActivitySessionResponse {
   memberStatus: 'ACTIVE' | 'DISABLED'
   refillPaused: boolean
+  refillPausedByPlatform: boolean
   rankingFrozen: boolean
   rankingDirty: boolean
 }

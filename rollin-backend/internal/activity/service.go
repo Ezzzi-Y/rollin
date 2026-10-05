@@ -944,7 +944,8 @@ func (s *service) PauseRefill(ctx context.Context, ownerUserID uint64, slug stri
 // started. Pre-start activities are excluded because they cannot issue or refill yet;
 // DISABLED activities are already stopped by their lifecycle gate and ARCHIVED
 // activities are immutable. Each newly paused activity receives its own activity-scope
-// audit row so the responsible OWNER can see the platform intervention.
+// audit row so the responsible OWNER can see the platform intervention. Owner-paused
+// activities also receive the platform restriction; only platform-paused rows are skipped.
 func (s *service) PauseAllAutoRefills(ctx context.Context, superAdminID uint64) (PauseAllAutoRefillsResult, error) {
 	var result PauseAllAutoRefillsResult
 	txErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -962,11 +963,11 @@ func (s *service) PauseAllAutoRefills(ctx context.Context, superAdminID uint64) 
 		info := audit.FromContext(ctx)
 		for i := range activities {
 			act := &activities[i]
-			if act.RefillPaused {
+			if act.RefillPausedByPlatform {
 				result.AlreadyPausedCount++
 				continue
 			}
-			if err := s.repo.UpdateColumns(ctx, tx, act.ID, map[string]any{"refill_paused": true}); err != nil {
+			if err := s.repo.UpdateColumns(ctx, tx, act.ID, map[string]any{"refill_paused": true, "refill_paused_by_platform": true}); err != nil {
 				return err
 			}
 			if err := s.deps.Audit.Record(tx, audit.Entry{
@@ -977,7 +978,7 @@ func (s *service) PauseAllAutoRefills(ctx context.Context, superAdminID uint64) 
 				Action:        audit.ActionRefillPaused,
 				TargetType:    "ACTIVITY",
 				TargetID:      &act.ID,
-				ChangeSummary: "超级管理员批量暂停自动递补（现有 Offer 保持有效，后续空额等待恢复）",
+				ChangeSummary: "超级管理员批量暂停自动递补（现有 Offer 保持有效，活动负责人不得恢复）",
 				Detail:        []byte(`{"refillPaused":true,"source":"PLATFORM_BULK"}`),
 				RequestID:     info.RequestID,
 				IPAddress:     info.IPAddress,
@@ -1018,6 +1019,9 @@ func (s *service) ResumeRefill(ctx context.Context, ownerUserID uint64, slug str
 			return errs.New(errs.CodeActivityDisabled, "活动已被禁用，无法恢复递补")
 		case model.ActivityArchived:
 			return errs.New(errs.CodeActivityArchived, "活动已归档，操作只读")
+		}
+		if act.RefillPausedByPlatform {
+			return errs.Forbidden("系统管理员已暂停自动递补，活动负责人无法开启，请联系系统管理员")
 		}
 		if !act.RefillPaused {
 			// Idempotent: already resumed — report the current state, refill nothing.

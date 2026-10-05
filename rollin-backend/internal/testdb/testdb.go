@@ -34,7 +34,7 @@ CREATE TABLE activity (
   ranking_dirty BOOLEAN NOT NULL DEFAULT 0,
   ranking_frozen BOOLEAN NOT NULL DEFAULT 0,
   started_at DATETIME,
-  refill_paused BOOLEAN NOT NULL DEFAULT 0,
+  refill_paused BOOLEAN NOT NULL DEFAULT 0, refill_paused_by_platform BOOLEAN NOT NULL DEFAULT 0,
   created_at DATETIME, updated_at DATETIME
 );
 CREATE TABLE platform_admin (

@@ -924,6 +924,14 @@ function ResumeRefillCard() {
     },
   })
 
+  if (ws.info?.refillPausedByPlatform) return (
+    <Card className="border-amber-300 bg-amber-50/60">
+      <CardHeader>
+        <CardTitle>系统管理员已暂停自动递补</CardTitle>
+        <CardDescription>活动负责人无法开启，请联系系统管理员。现有 Offer 保持有效，释放或新增的名额不会自动补位。</CardDescription>
+      </CardHeader>
+    </Card>
+  )
   if (!ws.isOwner) return null
   return (
     <Card className="border-amber-300 bg-amber-50/60">

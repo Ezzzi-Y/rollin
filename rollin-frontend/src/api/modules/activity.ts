@@ -57,6 +57,7 @@ export interface DashboardActivity {
   rankingFrozen: boolean
   startedAt: string | null
   refillPaused: boolean
+  refillPausedByPlatform: boolean
   successMessage: string | null
 }
 
