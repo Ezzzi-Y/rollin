@@ -151,7 +151,7 @@ func TestExportCandidatesXLSX(t *testing.T) {
 	}
 	// app4: terminal DECLINED offer carries declined_at and the candidate's free-text
 	// reason; the pending app2 row leaves the reason column empty.
-	if rows[4][8] != "已放弃" || rows[4][9] != "自动" || rows[4][12] != "2026-09-20 18:00:00" || rows[4][13] != "已选择其他研究方向" {
+	if rows[4][8] != "主动放弃" || rows[4][9] != "自动" || rows[4][12] != "2026-09-20 18:00:00" || rows[4][13] != "已选择其他研究方向" {
 		t.Fatalf("row4 decline = status %v/%v at %v reason %v", rows[4][8], rows[4][9], rows[4][12], rows[4][13])
 	}
 	if rows[2][13] != "" {
@@ -374,6 +374,76 @@ func TestExportAllCandidatesEmpty(t *testing.T) {
 	rows, err := f.GetRows(SheetName)
 	if err != nil || len(rows) != 1 || len(rows[0]) != len(headers)+2 {
 		t.Fatalf("empty aggregate = %v, %v", rows, err)
+	}
+}
+
+// Both per-direction and platform exports must distinguish the recorded decline
+// source, including legacy missing sources, without guessing from a free-text reason.
+func TestExportDeclineSources(t *testing.T) {
+	db := testdb.New(t)
+	act := model.Activity{Slug: "decline-2026", Title: "放弃方式", Status: model.ActivityActive, Quota: 10}
+	if err := db.Create(&act).Error; err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		source, status, want string
+	}{
+		{model.DeclineSourceCandidate, model.OfferDeclined, "主动放弃"},
+		{model.DeclineSourceCrossActivity, model.OfferDeclined, "联动放弃"},
+		{model.DeclineSourceSystem, model.OfferDeclined, "系统放弃"},
+		{"", model.OfferDeclined, "已放弃（来源未记录）"},
+		{"FUTURE_SOURCE", model.OfferDeclined, "已放弃（来源未知）"},
+		{"", model.OfferPending, "待确认"},
+	}
+	expires := time.Now().UTC().Add(time.Hour)
+	for i, tc := range cases {
+		order := i + 1
+		status := model.ApplicationDeclined
+		if tc.status == model.OfferPending {
+			status = model.ApplicationOffered
+		}
+		appID := seedApplication(t, db, act.ID, seedCandidate(t, db, fmt.Sprintf("D%03d", order)), &order, nil, status, "", "")
+		if tc.status == model.OfferPending {
+			// A declined historical Offer must not determine the label of a re-issue.
+			if err := db.Create(&model.Offer{ApplicationID: appID, Status: model.OfferDeclined,
+				Source: model.OfferSourceAuto, DeclineSource: model.DeclineSourceCrossActivity, ExpiresAt: expires}).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		reason := "已接受其他方向"
+		if err := db.Create(&model.Offer{ApplicationID: appID, Status: tc.status,
+			Source: model.OfferSourceSpecial, DeclineSource: tc.source, DeclineReason: &reason, ExpiresAt: expires}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := New(NewGormRepository(db))
+	for _, all := range []bool{false, true} {
+		var buf bytes.Buffer
+		var err error
+		offset := 0
+		if all {
+			err = svc.ExportAllCandidatesXLSX(context.Background(), &buf)
+			offset = 2
+		} else {
+			err = svc.ExportCandidatesXLSX(context.Background(), act.ID, &buf)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, err := excelize.OpenReader(&buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, err := f.GetRows(SheetName)
+		_ = f.Close()
+		if err != nil || len(rows) != len(cases)+1 {
+			t.Fatalf("export rows = %v, %v", rows, err)
+		}
+		for i, tc := range cases {
+			if rows[i+1][8+offset] != tc.want || rows[i+1][9+offset] != "特殊" {
+				t.Fatalf("all=%t source=%q: status %q, issuing source %q", all, tc.source, rows[i+1][8+offset], rows[i+1][9+offset])
+			}
+		}
 	}
 }
 

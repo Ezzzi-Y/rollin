@@ -359,13 +359,15 @@ GET /api/activities/{slug}/candidates?page=1&pageSize=20&status=WAITING&keyword=
       "applicationId": 101, "candidateId": 55, "studentId": "2026010388",
       "name": "张三", "email": "zhangsan@example.edu.cn",
       "score": 92, "rank": 4, "importOrder": 37, "status": "OFFERED",
-      "offer": { "offerId": 21, "status": "PENDING", "expiresAt": "2026-09-21T12:00:00Z", "source": "AUTO", "mailStatus": "SENT", "sentAt": "2026-09-18T09:05:00Z" }
+      "offer": { "offerId": 21, "status": "PENDING", "expiresAt": "2026-09-21T12:00:00Z", "source": "AUTO", "declineSource": "", "mailStatus": "SENT", "sentAt": "2026-09-18T09:05:00Z" }
     }
   ],
   "page": 1, "pageSize": 20, "total": 45
 }
 ```
 `offer` 为**当前有效或最近一次** Offer；历史 Offer 不在列表展开（详情接口提供）。
+
+`offer.declineSource` 为放弃方式，与 `source`（Offer 发放来源）独立：`CANDIDATE` = 主动放弃，`CROSS_ACTIVITY` = 接受其他方向 Offer 后联动放弃，`SYSTEM` = 系统放弃；空串表示未记录。状态码仍为 `DECLINED`，管理端候选人/Offer 列表及历史记录将其显示为「主动放弃」「联动放弃」或「系统放弃」；缺少来源时显示「已放弃（来源未记录）」，未知来源显示「已放弃（来源未知）」，不从自由文本原因推断。非 DECLINED 状态不使用该字段改变展示。
 
 ### 5.3 候选人详情
 
@@ -814,7 +816,7 @@ GET /api/activities/{slug}/export/candidates.xlsx
 `studentId | name | className | email | qq | score | rank | importOrder | offerStatus(当前) | offerSource | offerSentAt | offerAcceptedAt | offerDeclinedAt | offerDeclineReason(可空) | offerExpiredAt | createdAt`
 口径：Application 全量（含 WAITING/INELIGIBLE）；`offerStatus` 取该 Application 当前有效/最近一次 Offer；历史 Offer 不逐行列出（详情接口可查）。
 
-展示层（P6-6）：表头以中文渲染——`学号 | 姓名 | 班级 | 邮箱 | QQ | 分数 | 排名 | 导入顺序 | Offer 状态 | Offer 来源 | Offer 发送时间 | Offer 接受时间 | Offer 放弃时间 | Offer 放弃原因 | Offer 超时时间 | 报名时间`（沿用管理端 StatusBadge 词汇）；所有时间列以北京时间（UTC+8，FixedZone，与邮件正文同一口径）渲染，存储仍为 UTC；Offer 状态 / Offer 来源两列的值映射为管理端中文文案（待确认/已接受/已放弃/已超时；来源：自动/分批/手动/特殊），未知枚举回退原始码；放弃原因为候选人提交的自由文本（≤500 字，仅候选人/跨活动联动放弃时可能存在），原样导出；工作表名「候选人」，列宽按内容预设、首行冻结，全表套用带筛选下拉的样式化表格（过滤 Offer 状态）。
+展示层（P6-6）：表头以中文渲染——`学号 | 姓名 | 班级 | 邮箱 | QQ | 分数 | 排名 | 导入顺序 | Offer 状态 | Offer 来源 | Offer 发送时间 | Offer 接受时间 | Offer 放弃时间 | Offer 放弃原因 | Offer 超时时间 | 报名时间`（沿用管理端 StatusBadge 词汇）；所有时间列以北京时间（UTC+8，FixedZone，与邮件正文同一口径）渲染，存储仍为 UTC；Offer 状态 / Offer 来源两列的值映射为管理端中文文案（待确认/已接受/已超时；DECLINED 根据当前或最近一次 Offer 的 declineSource 显示为「主动放弃」「联动放弃」「系统放弃」，空串/未知来源分别标为「已放弃（来源未记录）」/「已放弃（来源未知）」；发放来源：自动/分批/手动/特殊），未知状态和发放来源枚举回退原始码；放弃原因为候选人提交的自由文本（≤500 字，仅候选人/跨活动联动放弃时可能存在），原样导出；工作表名「候选人」，列宽按内容预设、首行冻结，全表套用带筛选下拉的样式化表格（过滤 Offer 状态及放弃方式）。单方向和平台汇总导出使用同一规则，列数保持 16 / 18。
 
 ---
 

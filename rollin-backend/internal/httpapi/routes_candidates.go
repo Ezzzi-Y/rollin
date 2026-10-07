@@ -110,12 +110,13 @@ func renderCandidateItem(item application.Item) map[string]any {
 // renderListOffer renders the §5.2 offer projection subset.
 func renderListOffer(offer application.OfferSummary) map[string]any {
 	return map[string]any{
-		"offerId":    offer.OfferID,
-		"status":     offer.Status,
-		"expiresAt":  offer.ExpiresAt,
-		"source":     offer.Source,
-		"mailStatus": offer.MailStatus,
-		"sentAt":     offer.SentAt,
+		"offerId":       offer.OfferID,
+		"status":        offer.Status,
+		"expiresAt":     offer.ExpiresAt,
+		"source":        offer.Source,
+		"declineSource": offer.DeclineSource,
+		"mailStatus":    offer.MailStatus,
+		"sentAt":        offer.SentAt,
 	}
 }
 
@@ -153,12 +154,12 @@ func renderCandidateDetail(detail *application.Detail, withOffers bool) map[stri
 				"declineReasonAt": offer.DeclineReasonAt,
 				"declineSource":   offer.DeclineSource,
 				"createdAt":       offer.CreatedAt,
-				"expiresAt":  offer.ExpiresAt,
-				"sentAt":     offer.SentAt,
-				"acceptedAt": offer.AcceptedAt,
-				"declinedAt": offer.DeclinedAt,
-				"expiredAt":  offer.ExpiredAt,
-				"mailStatus": offer.MailStatus,
+				"expiresAt":       offer.ExpiresAt,
+				"sentAt":          offer.SentAt,
+				"acceptedAt":      offer.AcceptedAt,
+				"declinedAt":      offer.DeclinedAt,
+				"expiredAt":       offer.ExpiredAt,
+				"mailStatus":      offer.MailStatus,
 			})
 		}
 		body["offers"] = offers

@@ -47,7 +47,7 @@ var headers = []string{
 // header, email or "yyyy-mm-dd hh:mm:ss" timestamp is clipped on a default install.
 // 放弃原因 is candidate free text (≤500 chars): width 40 shows typical reasons; longer
 // text stays complete in the cell and clips visually like any Excel column.
-var columnWidths = []float64{14, 10, 16, 32, 16, 8, 8, 10, 12, 12, 20, 20, 20, 40, 20, 20}
+var columnWidths = []float64{14, 10, 16, 32, 16, 8, 8, 10, 24, 12, 20, 20, 20, 40, 20, 20}
 
 // Enum-code → display-label maps, verbatim the admin UI vocabulary (StatusBadge.tsx
 // OFFER_META, OffersPage source labels). The export is for Chinese admins; the code
@@ -66,6 +66,26 @@ var offerSourceLabels = map[string]string{
 	model.OfferSourceBatch:   "分批",
 	model.OfferSourceManual:  "手动",
 	model.OfferSourceSpecial: "特殊",
+}
+
+// Decline source describes how a terminal Offer was declined, independently of
+// source (AUTO/BATCH/MANUAL/SPECIAL), which describes how it was issued.
+func offerStatusLabel(offer *model.Offer) string {
+	if offer.Status != model.OfferDeclined {
+		return label(offer.Status, offerStatusLabels)
+	}
+	switch offer.DeclineSource {
+	case model.DeclineSourceCandidate:
+		return "主动放弃"
+	case model.DeclineSourceCrossActivity:
+		return "联动放弃"
+	case model.DeclineSourceSystem:
+		return "系统放弃"
+	case "":
+		return "已放弃（来源未记录）"
+	default:
+		return "已放弃（来源未知）"
+	}
 }
 
 // label maps an enum code to its export display label; unknown codes pass through.
@@ -282,7 +302,7 @@ func dataCells(row exportRow, offer *model.Offer, textStyle int) []interface{} {
 	}
 	var offerStatus, offerSource, sentAt, acceptedAt, declinedAt, declinedReason, expiredAt interface{} = "", "", "", "", "", "", ""
 	if offer != nil {
-		offerStatus = label(offer.Status, offerStatusLabels)
+		offerStatus = offerStatusLabel(offer)
 		offerSource = label(offer.Source, offerSourceLabels)
 		sentAt = timeCell(offer.SentAt)
 		acceptedAt = timeCell(offer.AcceptedAt)

@@ -14,7 +14,7 @@ const EXPORT_COLUMNS = [
   '分数',
   '排名',
   '导入顺序',
-  'Offer 状态（当前 / 最近一次）',
+  'Offer 状态（当前 / 最近一次；区分主动放弃、联动放弃）',
   'Offer 来源',
   'Offer 发送时间',
   'Offer 接受时间',

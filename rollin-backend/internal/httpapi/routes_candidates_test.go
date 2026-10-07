@@ -385,3 +385,50 @@ const (
 	auditActionImportTokenCreated = "IMPORT_TOKEN_CREATED"
 	auditActionImportTokenRevoked = "IMPORT_TOKEN_REVOKED"
 )
+
+func TestCandidateListDeclineSource(t *testing.T) {
+	handler, _, db := newP4TestServer(t)
+	cookies := seedOwnerLogin(t, handler, db, "decline-2026", "owner@example.edu.cn")
+	raw := mintImportToken(t, handler, cookies, "decline-2026")
+	sources := []string{model.DeclineSourceCandidate, model.DeclineSourceCrossActivity, model.DeclineSourceSystem, ""}
+	for i, source := range sources {
+		code, result := importCall(t, handler, raw, fmt.Sprintf(`{"studentId":"D%d","name":"学生","email":"d%d@example.edu.cn","score":90}`, i+1, i+1))
+		if code != http.StatusCreated {
+			t.Fatalf("import = %d %v", code, result)
+		}
+		appID := uint64(result["applicationId"].(float64))
+		if err := db.Model(&model.Application{}).Where("id = ?", appID).Update("status", model.ApplicationDeclined).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&model.Offer{ApplicationID: appID, Status: model.OfferDeclined,
+			Source: model.OfferSourceAuto, DeclineSource: source, ExpiresAt: time.Now().UTC()}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := do(t, handler, http.MethodGet, "/api/activities/decline-2026/candidates?status=DECLINED&sortBy=importOrder&order=asc", "", cookies, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list = %d %s", rec.Code, rec.Body.String())
+	}
+	items := decode(t, rec)["items"].([]any)
+	if len(items) != len(sources) {
+		t.Fatalf("declined items = %d", len(items))
+	}
+	for i, value := range items {
+		item := value.(map[string]any)
+		offer := item["offer"].(map[string]any)
+		if offer["declineSource"] != sources[i] || offer["source"] != model.OfferSourceAuto || offer["status"] != model.OfferDeclined {
+			t.Fatalf("list decline source = %v", offer)
+		}
+		path := fmt.Sprintf("/api/activities/decline-2026/candidates/%.0f", item["applicationId"].(float64))
+		rec = do(t, handler, http.MethodGet, path, "", cookies, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("detail = %d %s", rec.Code, rec.Body.String())
+		}
+		detail := decode(t, rec)
+		current := detail["offer"].(map[string]any)
+		history := detail["offers"].([]any)[0].(map[string]any)
+		if current["declineSource"] != sources[i] || history["declineSource"] != sources[i] {
+			t.Fatalf("detail decline source = %v / %v", current, history)
+		}
+	}
+}

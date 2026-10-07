@@ -363,12 +363,12 @@ function CandidatesContent() {
                     <TableCell className="font-mono text-xs">{item.studentId}</TableCell>
                     <TableCell className="tabular-nums">{item.score}</TableCell>
                     <TableCell>
-                      <ApplicationStatusBadge status={item.status} />
+                      <ApplicationStatusBadge status={item.status} declineSource={item.offer?.declineSource} />
                     </TableCell>
                     <TableCell>
                       {item.offer ? (
                         <div className="flex flex-col items-start gap-0.5">
-                          <OfferStatusBadge status={item.offer.status} />
+                          <OfferStatusBadge status={item.offer.status} declineSource={item.offer.declineSource} />
                           <span className="text-xs text-muted-foreground">
                             {OFFER_SOURCE_LABEL[item.offer.source] ?? item.offer.source}发放
                           </span>

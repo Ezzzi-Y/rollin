@@ -154,7 +154,7 @@ function OfferHistoryDialog({
                       )}
                     </TableCell>
                     <TableCell>
-                      <OfferStatusBadge status={offer.status} />
+                      <OfferStatusBadge status={offer.status} declineSource={offer.declineSource} />
                     </TableCell>
                     <TableCell className="text-xs">{OFFER_SOURCE_LABEL[offer.source] ?? offer.source}</TableCell>
                     <TableCell className="text-xs">{formatDateTime(offer.createdAt)}</TableCell>
@@ -652,7 +652,7 @@ function SpecialIssueDialog({
             <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
               <span className="font-medium">{target.name}</span>（{target.email} · rank {target.rank ?? '—'}）
               ，当前 Offer 状态：
-              {target.offer ? <OfferStatusBadge status={target.offer.status} /> : '无'}
+              {target.offer ? <OfferStatusBadge status={target.offer.status} declineSource={target.offer.declineSource} /> : '无'}
             </p>
           ) : null}
 
@@ -1160,12 +1160,12 @@ function OffersContent() {
                       <TableCell className="font-medium">{item.name}</TableCell>
                       <TableCell className="hidden font-mono text-xs md:table-cell">{item.studentId}</TableCell>
                       <TableCell>
-                        <ApplicationStatusBadge status={item.status} />
+                        <ApplicationStatusBadge status={item.status} declineSource={item.offer?.declineSource} />
                       </TableCell>
                       <TableCell>
                         {item.offer ? (
                           <div className="flex flex-col items-start gap-0.5">
-                            <OfferStatusBadge status={item.offer.status} />
+                            <OfferStatusBadge status={item.offer.status} declineSource={item.offer.declineSource} />
                             <span className="text-xs text-muted-foreground">
                               {OFFER_SOURCE_LABEL[item.offer.source] ?? item.offer.source}
                             </span>

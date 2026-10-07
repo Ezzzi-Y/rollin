@@ -71,7 +71,7 @@
 | `WAITING` | 候补中，尚未收到本活动 Offer | 否 |
 | `OFFERED` | 已发 Offer，等待确认（对应 Offer PENDING） | 是（经 Offer 口径） |
 | `ACCEPTED` | 已接受本活动 Offer | 是 |
-| `DECLINED` | 已主动放弃（含跨活动接受联动，D1） | 否 |
+| `DECLINED` | 已放弃；当前/最近一次 Offer 的 decline_source 区分主动放弃、跨活动接受联动（D1）及系统放弃 | 否 |
 | `EXPIRED` | Offer 超时失效 | 否 |
 | `INELIGIBLE` | 因已接受其他活动 Offer 失去本活动录取资格 | 否 |
 

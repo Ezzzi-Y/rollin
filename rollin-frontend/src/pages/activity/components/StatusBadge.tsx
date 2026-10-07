@@ -56,14 +56,28 @@ function StatusBadge({ meta }: { meta: BadgeMeta }) {
   return <Badge className={meta.className}>{meta.label}</Badge>
 }
 
+/** 放弃方式来自 Offer 的 declineSource，不从发放来源或自由文本原因推断。 */
+function declinedStatusLabel(source?: string): string {
+  switch (source) {
+    case 'CANDIDATE': return '主动放弃'
+    case 'CROSS_ACTIVITY': return '联动放弃'
+    case 'SYSTEM': return '系统放弃'
+    case undefined:
+    case '': return '已放弃（来源未记录）'
+    default: return '已放弃（来源未知）'
+  }
+}
+
 /** Application 状态徽章（契约 §5.2 status） */
-export function ApplicationStatusBadge({ status }: { status: ApplicationStatus }) {
-  return <StatusBadge meta={APPLICATION_META[status]} />
+export function ApplicationStatusBadge({ status, declineSource }: { status: ApplicationStatus; declineSource?: string }) {
+  const meta = APPLICATION_META[status]
+  return <StatusBadge meta={status === 'DECLINED' ? { ...meta, label: declinedStatusLabel(declineSource) } : meta} />
 }
 
 /** Offer 状态徽章（契约 §5.2 offer.status） */
-export function OfferStatusBadge({ status }: { status: OfferStatus }) {
-  return <StatusBadge meta={OFFER_META[status]} />
+export function OfferStatusBadge({ status, declineSource }: { status: OfferStatus; declineSource?: string }) {
+  const meta = OFFER_META[status]
+  return <StatusBadge meta={status === 'DECLINED' ? { ...meta, label: declinedStatusLabel(declineSource) } : meta} />
 }
 
 /** 邮件任务状态徽章（契约 §5.2 offer.mailStatus / §5.16 status） */

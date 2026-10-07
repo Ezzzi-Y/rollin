@@ -97,6 +97,8 @@ export interface CandidateOfferSummary {
   status: OfferStatus
   expiresAt: string | null
   source: OfferSource
+  /** 放弃方式：CANDIDATE 主动放弃，CROSS_ACTIVITY 联动放弃，SYSTEM 系统放弃；空值为旧记录未记录 */
+  declineSource?: string
   mailStatus: MailTaskStatus
   sentAt: string | null
 }
