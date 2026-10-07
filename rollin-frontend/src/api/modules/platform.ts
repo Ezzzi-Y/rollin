@@ -66,6 +66,14 @@ export function listActivities(params: ListActivitiesParams = {}): Promise<Activ
   })
 }
 
+/** 系统管理员导出：指定方向，或全部方向的候选人报名记录（含禁用/归档方向） */
+export function exportPlatformCandidatesXlsx(slug?: string): Promise<Blob> {
+  const path = slug === undefined
+    ? '/api/platform/export/candidates.xlsx'
+    : `/api/platform/activities/${encodeURIComponent(slug)}/export/candidates.xlsx`
+  return http.getBlob(path)
+}
+
 export interface CreateActivityPayload {
   /** 必填，≤100 字符 */
   title: string

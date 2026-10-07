@@ -39,6 +39,7 @@ import {
 import { formatDateTime } from '@/lib/format'
 import { CreateActivityDialog } from './CreateActivityDialog'
 import { OwnerInviteDialog } from './OwnerInviteDialog'
+import { PlatformExportButton } from './PlatformExportButton'
 
 const PAGE_SIZE = 20
 const STATUS_ALL = 'ALL'
@@ -166,9 +167,10 @@ export function ActivityListPage() {
     <div className="space-y-6">
       <PageHeader
         title="活动管理"
-        description="管理平台全部活动与负责人；不展示活动内部招新业务数据"
+        description="管理平台全部活动与负责人，支持按方向或汇总导出候选人数据"
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <PlatformExportButton />
             <Button
               variant="outline"
               size="sm"
@@ -185,6 +187,11 @@ export function ActivityListPage() {
           </div>
         }
       />
+
+      <p className="text-sm text-muted-foreground">
+        全部导出包含所有方向（含已禁用、已归档），不受列表筛选或分页影响。
+        汇总表标明所属方向；同一候选人在多个方向报名时分别保留记录。每次最多导出 50000 条报名记录。
+      </p>
 
       {/* 数量统计卡片（契约 §3.1 stats） */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -311,6 +318,7 @@ export function ActivityListPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="inline-flex items-center gap-1">
+                        <PlatformExportButton slug={activity.slug} title={activity.title} />
                         {activity.owner == null ? (
                           <Button
                             variant="outline"

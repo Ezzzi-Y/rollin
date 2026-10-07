@@ -22,7 +22,7 @@ interface NavItem {
 
 /**
  * 平台后台导航（需求 §73）：活动管理、负责人管理、平台 SMTP、平台参数。
- * 仅超级管理员可见（角色守卫见路由表）；平台后台不渲染任何活动内部业务数据。
+ * 仅超级管理员可见（角色守卫见路由表）；活动管理页提供各方向及汇总候选人导出。
  */
 const NAV_ITEMS: readonly NavItem[] = [
   { to: routePaths.platform.activities, label: '活动管理', icon: Building2 },

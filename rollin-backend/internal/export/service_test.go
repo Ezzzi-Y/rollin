@@ -251,6 +251,130 @@ func TestExportTooLarge(t *testing.T) {
 	if buf.Len() != 0 {
 		t.Fatalf("rejected export wrote %d bytes, want none", buf.Len())
 	}
+	// Split the records across two directions: neither exceeds the per-direction
+	// limit, but the platform aggregate still must reject all 50001 rows.
+	other := model.Activity{Slug: "big-other", Title: "另一方向", Status: model.ActivityArchived, Quota: 1}
+	if err := db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.Application{}).Where("import_order > ?", MaxRows/2).
+		Update("activity_id", other.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	err = New(NewGormRepository(db)).ExportAllCandidatesXLSX(context.Background(), &buf)
+	if !errs.Is(err, errs.CodeExportTooLarge) || buf.Len() != 0 {
+		t.Fatalf("aggregate overrun = %v, wrote %d bytes", err, buf.Len())
+	}
+}
+
+// Every direction starts its import_order at 1. The platform cursor must use the
+// global application ID to avoid skipping another direction at a batch boundary.
+func TestExportAllCandidatesAcrossDirections(t *testing.T) {
+	db := testdb.New(t)
+	activities := []model.Activity{
+		{Slug: "ai", Title: "人工智能", Status: model.ActivityActive, Quota: 1},
+		{Slug: "dev", Title: "软件开发", Status: model.ActivityDisabled, Quota: 1},
+		{Slug: "sec", Title: "=1+1", Status: model.ActivityArchived, Quota: 1},
+	}
+	if err := db.Create(&activities).Error; err != nil {
+		t.Fatal(err)
+	}
+	// One student applying to all three directions must remain three independent
+	// rows, including direction-local scores/ranks and current Offer information.
+	const perDirection = batchSize + 1
+	candidates := make([]model.Candidate, perDirection)
+	for i := range candidates {
+		candidates[i].StudentID = fmt.Sprintf("00%05d", i+1)
+	}
+	candidates[0].StudentID = "0012345"
+	if err := db.CreateInBatches(&candidates, 1000).Error; err != nil {
+		t.Fatal(err)
+	}
+	apps := make([]model.Application, 0, perDirection*len(activities))
+	for i, act := range activities {
+		for order := 1; order <= perDirection; order++ {
+			// Space IDs out to verify keyset pagination also tolerates gaps.
+			apps = append(apps, model.Application{
+				ID: uint64(len(apps)*2 + 1), ActivityID: act.ID, CandidateID: candidates[order-1].ID,
+				Name: "学生", Email: "s@example.edu.cn", Score: 90 + i,
+				ImportOrder: uint64(order), Status: model.ApplicationWaiting,
+			})
+		}
+	}
+	if err := db.CreateInBatches(&apps, 1000).Error; err != nil {
+		t.Fatal(err)
+	}
+	sentAt := time.Date(2026, 10, 7, 3, 0, 0, 0, time.UTC)
+	old := model.Offer{ApplicationID: apps[perDirection].ID, Status: model.OfferExpired, Source: model.OfferSourceAuto, ExpiresAt: sentAt}
+	if err := db.Create(&old).Error; err != nil {
+		t.Fatal(err)
+	}
+	current := model.Offer{ApplicationID: old.ApplicationID, Status: model.OfferPending, Source: model.OfferSourceSpecial, SentAt: &sentAt, ExpiresAt: sentAt.Add(time.Hour)}
+	if err := db.Create(&current).Error; err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := New(NewGormRepository(db)).ExportAllCandidatesXLSX(context.Background(), &buf); err != nil {
+		t.Fatal(err)
+	}
+	f, err := excelize.OpenReader(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	rows, err := f.GetRows(SheetName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != len(apps)+1 || len(rows[0]) != len(headers)+2 {
+		t.Fatalf("aggregate dimensions = %d rows, %d columns", len(rows), len(rows[0]))
+	}
+	if rows[0][0] != "方向" || rows[0][1] != "方向标识" || rows[0][2] != "学号" {
+		t.Fatalf("aggregate headers = %v", rows[0])
+	}
+	for i, row := range rows[1:] {
+		act := activities[i/perDirection]
+		if row[0] != act.Title || row[1] != act.Slug || row[2] != candidates[i%perDirection].StudentID || row[7] != fmt.Sprint(apps[i].Score) || row[9] != fmt.Sprint(apps[i].ImportOrder) {
+			t.Fatalf("aggregate row %d = %v", i+2, row)
+		}
+	}
+	currentRow := rows[perDirection+1]
+	if currentRow[10] != "待确认" || currentRow[11] != "特殊" || currentRow[12] != "2026-10-07 11:00:00" {
+		t.Fatalf("aggregate current offer = %v", currentRow)
+	}
+	styleID, err := f.GetCellStyle(SheetName, "C2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	style, err := f.GetStyle(styleID)
+	if err != nil || style.NumFmt != 49 {
+		t.Fatalf("aggregate student ID text style = %+v, %v", style, err)
+	}
+	formula, err := f.GetCellFormula(SheetName, fmt.Sprintf("A%d", perDirection*2+2))
+	if err != nil || formula != "" {
+		t.Fatalf("direction title interpreted as formula: %q, %v", formula, err)
+	}
+	tables, err := f.GetTables(SheetName)
+	if err != nil || len(tables) != 1 || tables[0].Range != fmt.Sprintf("A1:R%d", len(apps)+1) {
+		t.Fatalf("aggregate filter table = %+v, %v", tables, err)
+	}
+}
+
+func TestExportAllCandidatesEmpty(t *testing.T) {
+	db := testdb.New(t)
+	var buf bytes.Buffer
+	if err := New(NewGormRepository(db)).ExportAllCandidatesXLSX(context.Background(), &buf); err != nil {
+		t.Fatal(err)
+	}
+	f, err := excelize.OpenReader(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	rows, err := f.GetRows(SheetName)
+	if err != nil || len(rows) != 1 || len(rows[0]) != len(headers)+2 {
+		t.Fatalf("empty aggregate = %v, %v", rows, err)
+	}
 }
 
 // TestExportBatching proves the keyset pagination streams across batch boundaries:

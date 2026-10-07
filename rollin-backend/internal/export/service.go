@@ -83,6 +83,10 @@ type Service interface {
 	// whole workbook is finalized, so a mid-generation failure (count gate, row overrun)
 	// still leaves the caller free to answer with the contractual JSON error.
 	ExportCandidatesXLSX(ctx context.Context, activityID uint64, w io.Writer) error
+	// ExportAllCandidatesXLSX includes all directions, with one row per application
+	// and two leading columns identifying its direction. Platform authorization is
+	// enforced by the HTTP route, separately from activity membership.
+	ExportAllCandidatesXLSX(ctx context.Context, w io.Writer) error
 }
 
 type service struct {
@@ -100,8 +104,31 @@ func (s *service) ExportCandidatesXLSX(ctx context.Context, activityID uint64, w
 	if err != nil {
 		return err
 	}
+	return s.exportWorkbook(ctx, total, func(after uint64) ([]exportRow, error) {
+		return s.repo.ListApplicationBatch(ctx, activityID, after, batchSize)
+	}, false, w)
+}
+
+func (s *service) ExportAllCandidatesXLSX(ctx context.Context, w io.Writer) error {
+	total, err := s.repo.CountAllApplications(ctx)
+	if err != nil {
+		return err
+	}
+	return s.exportWorkbook(ctx, total, func(after uint64) ([]exportRow, error) {
+		return s.repo.ListAllApplicationBatch(ctx, after, batchSize)
+	}, true, w)
+}
+
+type batchLoader func(after uint64) ([]exportRow, error)
+
+func (s *service) exportWorkbook(ctx context.Context, total int64, load batchLoader, includeDirection bool, w io.Writer) error {
 	if total > MaxRows {
 		return exportTooLarge(total)
+	}
+	columns, widths := headers, columnWidths
+	if includeDirection {
+		columns = append([]string{"方向", "方向标识"}, headers...)
+		widths = append([]float64{24, 28}, columnWidths...)
 	}
 
 	f := excelize.NewFile()
@@ -134,7 +161,7 @@ func (s *service) ExportCandidatesXLSX(ctx context.Context, activityID uint64, w
 		return err
 	}
 	// Widths and the frozen title row must precede the first SetRow (stream order rule).
-	for i, width := range columnWidths {
+	for i, width := range widths {
 		if err := sw.SetColWidth(i+1, i+1, width); err != nil {
 			return err
 		}
@@ -144,18 +171,18 @@ func (s *service) ExportCandidatesXLSX(ctx context.Context, activityID uint64, w
 	}); err != nil {
 		return err
 	}
-	if err := sw.SetRow("A1", headerCells(headerStyle), excelize.RowOpts{Height: 24}); err != nil {
+	if err := sw.SetRow("A1", headerCells(headerStyle, columns), excelize.RowOpts{Height: 24}); err != nil {
 		return err
 	}
 
-	lastRow, err := s.writeRows(ctx, activityID, sw, textStyle)
+	lastRow, err := s.writeRows(ctx, load, includeDirection, sw, textStyle)
 	if err != nil {
 		return err
 	}
 	// The banded table adds the header filter dropdowns admins use to slice by status;
 	// it needs at least header + one data row, so an empty export skips it.
 	if lastRow >= 2 {
-		lastCell, err := excelize.CoordinatesToCellName(len(headers), lastRow)
+		lastCell, err := excelize.CoordinatesToCellName(len(columns), lastRow)
 		if err != nil {
 			return err
 		}
@@ -172,14 +199,15 @@ func (s *service) ExportCandidatesXLSX(ctx context.Context, activityID uint64, w
 	return f.Write(w)
 }
 
-// writeRows streams the applications in import_order batches. rowNo is one-based like
-// the spreadsheet grid; data starts at row 2. Returns the last written row number so
+// writeRows streams one activity by import_order, or all activities by global ID.
+// rowNo is one-based like the spreadsheet grid; data starts at row 2.
+// Returns the last written row number so
 // the caller can frame the filter table.
-func (s *service) writeRows(ctx context.Context, activityID uint64, sw *excelize.StreamWriter, textStyle int) (int, error) {
+func (s *service) writeRows(ctx context.Context, load batchLoader, includeDirection bool, sw *excelize.StreamWriter, textStyle int) (int, error) {
 	rowNo := 1
 	after := uint64(0)
 	for {
-		rows, err := s.repo.ListApplicationBatch(ctx, activityID, after, batchSize)
+		rows, err := load(after)
 		if err != nil {
 			return rowNo, err
 		}
@@ -207,10 +235,17 @@ func (s *service) writeRows(ctx context.Context, activityID uint64, sw *excelize
 			if err != nil {
 				return rowNo, err
 			}
-			if err := sw.SetRow(cell, dataCells(rows[i], current[rows[i].ID], textStyle)); err != nil {
+			cells := dataCells(rows[i], current[rows[i].ID], textStyle)
+			if includeDirection {
+				cells = append([]interface{}{rows[i].ActivityTitle, rows[i].ActivitySlug}, cells...)
+			}
+			if err := sw.SetRow(cell, cells); err != nil {
 				return rowNo, err
 			}
 			after = rows[i].ImportOrder
+			if includeDirection {
+				after = rows[i].ID
+			}
 		}
 		if len(rows) < batchSize {
 			return rowNo, nil
@@ -219,9 +254,9 @@ func (s *service) writeRows(ctx context.Context, activityID uint64, sw *excelize
 }
 
 // headerCells builds row 1 from the §9.1 column order, styled with the header band.
-func headerCells(styleID int) []interface{} {
-	values := make([]interface{}, len(headers))
-	for i, h := range headers {
+func headerCells(styleID int, columns []string) []interface{} {
+	values := make([]interface{}, len(columns))
+	for i, h := range columns {
 		values[i] = excelize.Cell{StyleID: styleID, Value: h}
 	}
 	return values

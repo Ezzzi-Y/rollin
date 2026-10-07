@@ -46,6 +46,8 @@ func (s *Server) mountPlatform(r chi.Router) {
 			admin.Put("/smtp", s.platformSMTPPut)
 			admin.Post("/smtp/test", s.platformSMTPTest)
 			admin.Get("/activities", s.platformActivitiesList)
+			admin.Get("/export/candidates.xlsx", s.platformExportCandidates)
+			admin.Get("/activities/{slug}/export/candidates.xlsx", s.platformExportCandidates)
 			admin.Post("/activities", s.platformActivitiesCreate)
 			admin.Post("/activities/refill/pause-all", s.platformAutoRefillsPauseAll)
 			admin.Post("/activities/{slug}/disable", s.platformActivityDisable)

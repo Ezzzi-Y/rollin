@@ -9,7 +9,7 @@
 
 | 角色 | 作用域 | 标识方式 | 说明 |
 | --- | --- | --- | --- |
-| `SUPER_ADMIN` | 平台 | 平台 Session Cookie（`rollin_platform_session`） | 全平台唯一，首次部署由环境变量幂等初始化。只管理平台与租户生命周期，**原则上不得访问活动内部业务数据**（需求 8 章） |
+| `SUPER_ADMIN` | 平台 | 平台 Session Cookie（`rollin_platform_session`） | 全平台唯一，首次部署由环境变量幂等初始化。管理平台与租户生命周期；另允许通过平台专用接口按方向或汇总导出候选人数据（需求 89 章），不获得活动工作区权限 |
 | `OWNER` | 单个活动 | 活动 Session Cookie（`rollin_activity_session`）+ `activity_member.role='OWNER'` | 活动内最高权限；每活动至多一个 OWNER（生成列唯一约束保证） |
 | `ADMIN` | 单个活动 | 活动 Session Cookie + `activity_member.role='ADMIN'` | 日常业务管理；无租户级高权限操作 |
 | 匿名 Token 调用方 | 见下 | Bearer / URL Token | 三类：Offer Token（Public Offer API）、Import Token（Bearer）、Invite Token（公开邀请激活） |
@@ -60,8 +60,10 @@
 | `POST /api/platform/activities/{slug}/owners/{userId}/disable`（停用负责人） | ✅ | ❌ | ❌ | — |
 | `POST /api/platform/activities/{slug}/owners/{userId}/invitation/resend`（重发负责人邀请） | ✅ | ❌ | ❌ | — |
 | `GET /api/platform/activities/{slug}/owners`（负责人/成员配置视图，不含业务数据） | ✅ | ❌ | ❌ | — |
+| `GET /api/platform/activities/{slug}/export/candidates.xlsx`（单方向候选人导出） | ✅ | ❌ | ❌ | — |
+| `GET /api/platform/export/candidates.xlsx`（全部方向候选人汇总导出） | ✅ | ❌ | ❌ | — |
 
-> 超级管理员可见字段仅限活动配置（title/slug/quota/offer_mode/offer_expire_hours/status/created_at/负责人概要），**不返回**候选人、分数、排名、Offer、录取结果或详细业务统计（A02）。
+> 平台活动列表可见字段仍仅限活动配置（title/slug/quota/offer_mode/offer_expire_hours/status/created_at/负责人概要）。候选人数据仅通过上表两个平台专用 XLSX 接口导出，包含报名信息、分数、排名及当前/最近一次 Offer；不开放活动工作区及业务修改权限。
 
 ### 2.3 活动认证 / 邀请激活
 
@@ -145,6 +147,7 @@
 | --- | --- | --- |
 | 平台登录 / 平台配置 / 平台活动管理（含 disable/activate） | ✅（平台作用域不受活动状态影响） | ✅（可查看，activate 对 ARCHIVED 返回 `CONFLICT`） |
 | 平台活动列表 / 数量统计 | ✅ | ✅ |
+| 平台单方向 / 全部方向候选人导出（§2.2 专用接口） | ✅ | ✅ |
 | 活动登录 `POST .../auth/login` | 🔒 成员被禁进入（88.1.6） | ✅ 可登录（仅查询/导出可用） |
 | 活动登出 / me | me 🔒（授权检查即拒） | ✅ |
 | Dashboard / 候选人列表 / 详情 / 邮件任务列表 / 审计查询 | 🔒 | ✅ 只读查询全部可用 |

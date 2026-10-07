@@ -818,6 +818,25 @@ GET /api/activities/{slug}/export/candidates.xlsx
 
 ---
 
+### 9.2 系统管理员候选人 XLSX 导出
+
+```
+GET /api/platform/activities/{slug}/export/candidates.xlsx
+GET /api/platform/export/candidates.xlsx
+```
+
+权限 `[S]`：仅接受有效的平台 Session，活动 OWNER / ADMIN Session、Import Token 和匿名请求均不能下载。
+
+单方向导出：按 `{slug}` 解析活动，列集合、Application / 当前或最近一次 Offer 口径及展示样式与 §9.1 一致；活动不存在返回 `404 NOT_FOUND`。文件名为 `{slug}-candidates-{yyyyMMdd}.xlsx`。
+
+全部导出：包含所有方向的全量 Application（含 WAITING / INELIGIBLE），不受活动列表搜索、状态筛选、分页影响。每条报名记录一行，同一学号在多个方向报名时保留各方向记录，不按学号去重；按全局 Application ID 升序分批查询。表头在 §9.1 的 16 列前增加 `方向 | 方向标识`（活动 title / slug），共 18 列；学号仍强制文本，时间仍为北京时间（UTC+8）。文件名为 `all-candidates-{yyyyMMdd}.xlsx`。
+
+两个平台接口均允许导出 ACTIVE / DISABLED / ARCHIVED 方向，不依赖活动成员身份。同步生成；最多 50000 条报名记录，汇总按所有方向合计判断，超出返回 `413 EXPORT_TOO_LARGE`；生成过程中再次检查上限。空数据仍下载带表头的 XLSX。成功响应 Content-Type 与 §9.1 相同，附带 `Content-Disposition: attachment` 和 `Cache-Control: no-store`；失败保持 JSON 错误响应，不返回附件头。
+
+这是系统管理员专用的只读导出权限；`/api/activities/{slug}/...` 原有成员权限及状态限制保持不变。
+
+---
+
 ## 10. 旧端点退役清单
 
 现有 `rollin-backend/internal/httpapi/router.go` 全部路由的去向。**不做兼容层**（D5：无外部调用方）。

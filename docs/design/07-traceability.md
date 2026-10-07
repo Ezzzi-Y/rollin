@@ -11,7 +11,7 @@
 | # | 核心约束 | 落实阶段 | 模块 / 端点 / 机制 | 设计依据 |
 | --- | --- | --- | --- | --- |
 | 1 | Activity 是主要租户边界 | P1（模型）、P2（授权） | 路由 `/api/activities/{slug}/...` 以 slug 定租户；所有业务查询强制 `activity_id` 过滤 | 04 §4.1、05 §1 |
-| 2 | Activity 间业务数据默认严格隔离 | P2、P6 | 授权中间件归属检查 + 资源归属检查（跨活动资源 ID 一律 404）；导出仅当前活动；OWNER 审计查询仅本活动 scope | 03 §1、03 §2.8、04 §9 |
+| 2 | Activity 间业务数据默认严格隔离 | P2、P6 | 授权中间件归属检查 + 资源归属检查（跨活动资源 ID 一律 404）；成员导出仅当前活动；系统管理员通过平台专用接口按方向/全量导出；OWNER 审计查询仅本活动 scope | 03 §1、03 §2.8、04 §9 |
 | 3 | Candidate 是平台级共享实体 | P1 | `candidate` 表无 activity_id，仅 `student_id` 全局唯一 + `accepted_offer_id` | 05 §5 |
 | 4 | 同一 Candidate 可参加多个 Activity | P1、P4 | `application (activity_id, candidate_id)` 多行；导入按 student_id 复用 Candidate | 05 §6、04 §8 |
 | 5 | Candidate 可同时拥有多个 PENDING Offer | P5 | 发放入口不检查「他活动 PENDING」，仅检查全局 `accepted_offer_id IS NULL` | 04 §6.1/§6.3、02 §2.2 |
@@ -58,7 +58,7 @@
 | 编号 | 场景 | 预期结果 | 覆盖方式 | 相关端点 / 机制 |
 | --- | --- | --- | --- | --- |
 | A01 | 同邮箱在 A、B 两活动注册并设不同密码 | 两账户独立，A 密码/Session 不能进入 B | 自动化：并发创建 + 交叉登录断言 401 | `uk_user_activity_email`（05 §2）；`/api/activities/{slug}/auth/login`（04 §4.2） |
-| A02 | 超管或其他活动成员直接请求候选/Offer/导出接口 | 后端拒绝，响应不泄露业务数据 | 自动化：越权矩阵遍历（每端点 × 每 IP 断言）断言 403/404 与错误体无业务字段 | 03 §2.8；04 §10 错误码 |
+| A02 | 超管或其他活动成员直接请求活动工作区候选/Offer/导出接口 | 后端拒绝，响应不泄露业务数据；超管导出仅允许平台专用接口，成员/匿名/Token 无权调用平台导出 | 自动化：越权矩阵遍历 + `routes_export_test.go` 平台导出认证/活动状态覆盖 | 03 §2.8；04 §9.2 / §10 错误码 |
 | A03 | 成员停用后用原 Session；活动禁用后用旧 Token | 即时拒绝；不改 Offer/Application 状态 | 自动化：停用 → 复用 Cookie 断言 403；禁用 → GET/POST Public 断言失效且库快照不变 | 03 §4.2 实时回查；02 §1.3 |
 | A04 | 重复邀请、同时接受旧邀请、超 72h 激活 | 旧/过期 Token 不可激活；成员关系不重复 | 自动化：竞态双激活（并行 POST accept）断言恰好一次成功；过期断言 `TOKEN_EXPIRED` | `uk_invite_token_hash` + 条件更新（02 §6）；`uk_member_activity_user`（05 §4） |
 | A05 | 同学号跨活动导入不同姓名/邮箱/分数 | 共享 Candidate，Application 资料互不覆盖 | 自动化：两活动导入同一 studentId 断言 candidate 单行、application 两行字段独立 | 05 §5/§6；04 §8 |
